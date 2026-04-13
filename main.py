@@ -439,7 +439,7 @@ class AuthWindow(QMainWindow):
         social_buttons = QHBoxLayout()
         google_btn = QPushButton("Google")
         google_btn.setObjectName("SocialButton")
-        github_btn = QPushButton("GitHub")
+        github_btn = QPushButton("Facebook")
         github_btn.setObjectName("SocialButton")
 
         social_buttons.addWidget(google_btn)
