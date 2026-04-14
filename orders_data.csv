@@ -1,0 +1,4 @@
+order_id,restaurant_id,items,status
+101,R1,Pizza Margherita,Pending
+102,R1,Burger Combo,Pending
+103,R2,Pasta Alfredo,Pending
