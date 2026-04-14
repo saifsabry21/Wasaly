@@ -13,6 +13,8 @@ SPLASH_PATH = "splashscreen.png"
 SIDE_IMAGE_PATH = "sidescreen.png"
 CSV_PATH = "users_data.csv"
 CSV_HEADERS = ["full_name", "email", "phone", "password", "role"]
+ORDERS_CSV = "orders_data.csv"
+ORDERS_HEADERS = ["order_id", "restaurant_id", "items", "status"]
 
 DUMMY_USERS = [
     {
@@ -82,6 +84,29 @@ def append_user(user_data):
     with open(CSV_PATH, "a", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=CSV_HEADERS)
         writer.writerow(user_data)
+
+def load_orders():
+    orders = []
+    if not os.path.exists(ORDERS_CSV):
+        return orders
+    with open(ORDERS_CSV, "r", newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            orders.append(row)
+    return orders
+
+
+def update_order_status_csv(order_id, new_status):
+    orders = load_orders()
+    for order in orders:
+        if order["order_id"] == str(order_id):
+            order["status"] = new_status
+
+    with open(ORDERS_CSV, "w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=ORDERS_HEADERS)
+        writer.writeheader()
+        writer.writerows(orders)
+
 
 
 class SplashScreen(QWidget):
@@ -176,6 +201,107 @@ class RoleWindow(QMainWindow):
         layout.addWidget(info)
         layout.addWidget(note)
         layout.addStretch()
+class RestaurantDashboard(QMainWindow):
+    def __init__(self, user_data):
+        super().__init__()
+        self.user_data = user_data
+        role = user_data.get("role", "Restaurant")
+        name = user_data.get("full_name", "Restaurant Owner")
+
+        self.setWindowTitle(f"Wasaly - {role} Dashboard")
+        self.resize(900, 600)
+        self.setStyleSheet("background: #ffffff;")
+
+        central = QWidget()
+        self.setCentralWidget(central)
+
+        self.layout = QVBoxLayout(central)
+        self.layout.setContentsMargins(40, 40, 40, 40)
+        self.layout.setSpacing(18)
+
+        # Header matching Jana's style
+        title = QLabel("Restaurant Dashboard")
+        title.setFont(QFont("Arial", 24, QFont.Bold))
+        title.setStyleSheet("color: #111827;")
+
+        welcome = QLabel(f"Welcome back, {name}")
+        welcome.setFont(QFont("Arial", 16))
+        welcome.setStyleSheet("color: #374151;")
+
+        self.layout.addWidget(title)
+        self.layout.addWidget(welcome)
+
+        # Area to hold the orders
+        self.orders_container = QVBoxLayout()
+        self.orders_container.setSpacing(15)
+        self.layout.addLayout(self.orders_container)
+        self.layout.addStretch()
+
+        self.refresh_orders()
+
+    def refresh_orders(self):
+        # Clear old order cards before redrawing
+        for i in reversed(range(self.orders_container.count())):
+            widget = self.orders_container.itemAt(i).widget()
+            if widget is not None:
+                widget.setParent(None)
+
+        orders = load_orders()
+
+        if not orders:
+            empty = QLabel("No orders available.")
+            empty.setStyleSheet("color: #6b7280; font-size: 14px;")
+            self.orders_container.addWidget(empty)
+            return
+
+        for order in orders:
+            # Create a card for each order using Jana's styling
+            card = QFrame()
+            card.setStyleSheet("""
+                QFrame {
+                    background: #f9fafb; 
+                    border: 1px solid #e5e7eb; 
+                    border-radius: 10px; 
+                }
+            """)
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(20, 20, 20, 20)
+
+            # Order Info
+            info = QLabel(
+                f"<b>Order #{order['order_id']}</b><br><br>Items: {order['items']}<br>Status: <b>{order['status']}</b>")
+            info.setStyleSheet("color: #374151; font-size: 14px; border: none; background: transparent;")
+            card_layout.addWidget(info)
+            card_layout.addStretch()
+
+            # Add Accept/Reject buttons only if Pending
+            if order['status'] == "Pending":
+                accept_btn = QPushButton("Accept")
+                accept_btn.setFixedSize(100, 40)
+                accept_btn.setStyleSheet("""
+                    QPushButton { background-color: #10b981; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; }
+                    QPushButton:hover { background-color: #059669; }
+                """)
+                accept_btn.clicked.connect(lambda ch, o=order['order_id']: self.handle_action(o, "Accepted"))
+
+                reject_btn = QPushButton("Reject")
+                reject_btn.setFixedSize(100, 40)
+                reject_btn.setStyleSheet("""
+                    QPushButton { background-color: #ef4444; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; }
+                    QPushButton:hover { background-color: #dc2626; }
+                """)
+                reject_btn.clicked.connect(lambda ch, o=order['order_id']: self.handle_action(o, "Rejected"))
+
+                card_layout.addWidget(accept_btn)
+                card_layout.addSpacing(10)
+                card_layout.addWidget(reject_btn)
+
+            self.orders_container.addWidget(card)
+
+    def handle_action(self, order_id, status):
+        update_order_status_csv(order_id, status)
+        QMessageBox.information(self, "Order Updated", f"Order #{order_id} has been {status}.")
+        self.refresh_orders()  # Instantly update the UI
 
 
 class AuthWindow(QMainWindow):
@@ -499,7 +625,14 @@ class AuthWindow(QMainWindow):
         self.style().polish(self.register_toggle)
 
     def show_role_window(self, user_data):
-        self.role_window = RoleWindow(user_data)
+        role = user_data.get("role", "User")
+
+        # Check if the user is a Restaurant
+        if role == "Restaurant":
+            self.role_window = RestaurantDashboard(user_data)
+        else:
+            self.role_window = RoleWindow(user_data)
+
         center_window(self.role_window)
         self.role_window.show()
         self.close()
