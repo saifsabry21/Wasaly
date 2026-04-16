@@ -1,4 +1,5 @@
 import csv
+import json
 import os
 import sys
 from PyQt5.QtCore import Qt, QTimer
@@ -6,8 +7,9 @@ from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QMainWindow, QLabel, QPushButton,
     QLineEdit, QHBoxLayout, QVBoxLayout, QFrame, QMessageBox,
-    QCheckBox
+    QCheckBox, QStackedWidget
 )
+from nearby_restaurants import NearbyRestaurantsWidget
 
 SPLASH_PATH = "splashscreen.png"
 SIDE_IMAGE_PATH = "sidescreen.png"
@@ -15,6 +17,7 @@ CSV_PATH = "users_data.csv"
 CSV_HEADERS = ["full_name", "email", "phone", "password", "role"]
 ORDERS_CSV = "orders_data.csv"
 ORDERS_HEADERS = ["order_id", "restaurant_id", "items", "status"]
+SESSION_PATH = "session.json"
 
 DUMMY_USERS = [
     {
@@ -85,6 +88,30 @@ def append_user(user_data):
         writer = csv.DictWriter(file, fieldnames=CSV_HEADERS)
         writer.writerow(user_data)
 
+def save_session(user_data):
+    """Save logged-in user to session file (Remember Me)."""
+    with open(SESSION_PATH, "w", encoding="utf-8") as f:
+        json.dump({"email": user_data["email"]}, f)
+
+
+def load_session():
+    """Return user_data if a valid saved session exists, else None."""
+    if not os.path.exists(SESSION_PATH):
+        return None
+    try:
+        with open(SESSION_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return find_user_by_email(data.get("email", ""))
+    except Exception:
+        return None
+
+
+def clear_session():
+    """Delete the saved session file."""
+    if os.path.exists(SESSION_PATH):
+        os.remove(SESSION_PATH)
+
+
 def load_orders():
     orders = []
     if not os.path.exists(ORDERS_CSV):
@@ -154,53 +181,185 @@ class SplashScreen(QWidget):
 
 
 class RoleWindow(QMainWindow):
+    """Customer Dashboard with same-window navigation using QStackedWidget."""
     def __init__(self, user_data):
         super().__init__()
         self.user_data = user_data
         role = user_data.get("role", "User")
         name = user_data.get("full_name", "User")
 
-        self.setWindowTitle(f"Wasaly - {role}")
-        self.resize(900, 600)
-        self.setStyleSheet("background: #ffffff;")
+        self.setWindowTitle(f"Wasaly – Customer Dashboard")
+        self.resize(900, 620)
+        self.setStyleSheet("background: #f9fafb;")
 
-        central = QWidget()
-        self.setCentralWidget(central)
+        # Stacked widget: page 0 = dashboard, page 1 = nearby restaurants
+        self.stack = QStackedWidget()
+        self.setCentralWidget(self.stack)
 
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(40, 40, 40, 40)
-        layout.setSpacing(18)
+        # Build dashboard page
+        dashboard_page = QWidget()
+        layout = QVBoxLayout(dashboard_page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        title = QLabel(f"{role} Dashboard")
-        title.setFont(QFont("Arial", 24, QFont.Bold))
-        title.setStyleSheet("color: #111827;")
+        # Header
+        header = QFrame()
+        header.setStyleSheet("background: #ffffff; border-bottom: 1px solid #e5e7eb;")
+        header.setFixedHeight(64)
+        h_layout = QHBoxLayout(header)
+        h_layout.setContentsMargins(32, 0, 32, 0)
 
-        welcome = QLabel(f"Welcome, {name}")
-        welcome.setFont(QFont("Arial", 16))
-        welcome.setStyleSheet("color: #374151;")
+        logo_img = QLabel()
+        logo_pixmap = QPixmap("logo.png")
+        if not logo_pixmap.isNull():
+            logo_img.setPixmap(logo_pixmap.scaled(120, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            logo_img.setText("Wasaly")
+            logo_img.setFont(QFont("Arial", 18, QFont.Bold))
+            logo_img.setStyleSheet("color: #f0b100;")
+        logo_lbl = logo_img
 
-        info = QLabel(
-            f"Logged in as: {user_data.get('email', '')}\n"
-            f"Phone: {user_data.get('phone', '')}\n"
-            f"Role: {role}"
-        )
-        info.setStyleSheet(
-            "color: #4b5563; font-size: 14px; line-height: 1.6; "
-            "background: #f9fafb; border: 1px solid #e5e7eb; "
-            "border-radius: 12px; padding: 16px;"
-        )
+        user_lbl = QLabel(f"👤 {name}")
+        user_lbl.setStyleSheet("color: #6b7280; font-size: 13px;")
 
-        note = QLabel(
-            "This is a placeholder dashboard window. You can now build a separate UI for each role."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("color: #6b7280; font-size: 14px;")
+        logout_btn = QPushButton("Logout")
+        logout_btn.setFixedHeight(32)
+        logout_btn.setStyleSheet("""
+            QPushButton {
+                background: #fee2e2; color: #ef4444; border: none;
+                border-radius: 8px; padding: 0 14px; font-size: 12px; font-weight: 600;
+            }
+            QPushButton:hover { background: #fecaca; }
+        """)
+        logout_btn.clicked.connect(self._logout)
 
-        layout.addWidget(title)
-        layout.addWidget(welcome)
-        layout.addWidget(info)
-        layout.addWidget(note)
-        layout.addStretch()
+        h_layout.addWidget(logo_lbl)
+        h_layout.addStretch()
+        h_layout.addWidget(user_lbl)
+        h_layout.addSpacing(10)
+        h_layout.addWidget(logout_btn)
+        layout.addWidget(header)
+
+        # Body
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(40, 36, 40, 40)
+        body_layout.setSpacing(20)
+
+        welcome = QLabel(f"Welcome back, {name.split()[0]}! 👋")
+        welcome.setFont(QFont("Arial", 22, QFont.Bold))
+        welcome.setStyleSheet("color: #111827;")
+
+        subtitle = QLabel("What would you like to do today?")
+        subtitle.setStyleSheet("color: #6b7280; font-size: 14px;")
+
+        body_layout.addWidget(welcome)
+        body_layout.addWidget(subtitle)
+        body_layout.addSpacing(8)
+
+        # Feature cards grid
+        cards_layout = QHBoxLayout()
+        cards_layout.setSpacing(16)
+
+        # ── Discover Nearby card (YOUR FEATURE – active) ──
+        # ── Shared card style ──
+        CARD_H = 160
+        CARD_MARGINS = (16, 14, 16, 14)
+        ICON_SIZE = 18
+        TITLE_SIZE = 12
+
+        nearby_card = QFrame()
+        nearby_card.setStyleSheet("QFrame { background: #f0b100; border-radius: 14px; }")
+        nearby_card.setFixedHeight(CARD_H)
+        nc_layout = QVBoxLayout(nearby_card)
+        nc_layout.setContentsMargins(*CARD_MARGINS)
+        nc_layout.setSpacing(6)
+
+        nc_icon = QLabel("📍")
+        nc_icon.setFont(QFont("Arial", ICON_SIZE))
+        nc_icon.setStyleSheet("background: transparent;")
+
+        nc_title = QLabel("Discover Nearby Restaurants")
+        nc_title.setFont(QFont("Arial", TITLE_SIZE, QFont.Bold))
+        nc_title.setWordWrap(True)
+        nc_title.setStyleSheet("color: #ffffff; background: transparent;")
+
+        nc_btn = QPushButton("Open →")
+        nc_btn.setFixedHeight(32)
+        nc_btn.setStyleSheet("""
+            QPushButton {
+                background: white; color: #f0b100; border: none;
+                border-radius: 8px; font-size: 12px; font-weight: 700;
+            }
+            QPushButton:hover { background: #fffbeb; }
+        """)
+        nc_btn.clicked.connect(self._open_nearby_restaurants)
+
+        nc_layout.addWidget(nc_icon)
+        nc_layout.addWidget(nc_title)
+        nc_layout.addStretch()
+        nc_layout.addWidget(nc_btn)
+
+        # ── Placeholder cards for future sprints ──
+        def _placeholder_card(icon, title, sprint):
+            card = QFrame()
+            card.setStyleSheet(
+                "QFrame { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; }"
+            )
+            card.setFixedHeight(CARD_H)
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(*CARD_MARGINS)
+            cl.setSpacing(6)
+
+            lbl_icon = QLabel(icon)
+            lbl_icon.setFont(QFont("Arial", ICON_SIZE))
+            lbl_icon.setStyleSheet("background: transparent;")
+
+            lbl_title = QLabel(title)
+            lbl_title.setFont(QFont("Arial", TITLE_SIZE, QFont.Bold))
+            lbl_title.setStyleSheet("color: #374151; background: transparent;")
+            lbl_title.setWordWrap(True)
+
+            lbl_soon = QLabel(f"Coming in {sprint}")
+            lbl_soon.setStyleSheet("color: #9ca3af; font-size: 11px; background: transparent;")
+
+            cl.addWidget(lbl_icon)
+            cl.addWidget(lbl_title)
+            cl.addStretch()
+            cl.addWidget(lbl_soon)
+            return card
+
+        cart_card   = _placeholder_card("🛒", "My Cart & Checkout", "Sprint 2")
+        orders_card = _placeholder_card("📦", "Track My Orders",    "Sprint 2")
+        reviews_card = _placeholder_card("⭐", "Ratings & Reviews", "Sprint 3")
+
+        cards_layout.addWidget(nearby_card)
+        cards_layout.addWidget(cart_card)
+        cards_layout.addWidget(orders_card)
+        cards_layout.addWidget(reviews_card)
+
+        body_layout.addLayout(cards_layout)
+        body_layout.addStretch()
+        layout.addWidget(body)
+
+        self.stack.addWidget(dashboard_page)   # index 0
+
+        # Build nearby restaurants page
+        self.nearby_widget = NearbyRestaurantsWidget(self.user_data)
+        self.nearby_widget.go_back.connect(lambda: self.stack.setCurrentIndex(0))
+        self.stack.addWidget(self.nearby_widget)  # index 1
+
+    def _logout(self):
+        clear_session()
+        from PyQt5.QtWidgets import QApplication
+        # Restart auth window
+        self.auth_window = AuthWindow()
+        center_window(self.auth_window)
+        self.auth_window.show()
+        self.close()
+
+    def _open_nearby_restaurants(self):
+        self.stack.setCurrentIndex(1)
 class RestaurantDashboard(QMainWindow):
     def __init__(self, user_data):
         super().__init__()
@@ -624,15 +783,15 @@ class AuthWindow(QMainWindow):
         self.style().unpolish(self.register_toggle)
         self.style().polish(self.register_toggle)
 
-    def show_role_window(self, user_data):
+    def build_role_window(self, user_data):
         role = user_data.get("role", "User")
-
-        # Check if the user is a Restaurant
         if role == "Restaurant":
-            self.role_window = RestaurantDashboard(user_data)
+            return RestaurantDashboard(user_data)
         else:
-            self.role_window = RoleWindow(user_data)
+            return RoleWindow(user_data)
 
+    def show_role_window(self, user_data):
+        self.role_window = self.build_role_window(user_data)
         center_window(self.role_window)
         self.role_window.show()
         self.close()
@@ -676,6 +835,9 @@ class AuthWindow(QMainWindow):
         if user["password"] != password:
             QMessageBox.warning(self, "Login Failed", "Incorrect password.")
             return
+
+        if self.remember_check.isChecked():
+            save_session(user)
 
         QMessageBox.information(
             self,
@@ -790,8 +952,15 @@ def main():
 
     def show_auth():
         splash.close()
-        auth_window.show()
-        center_window(auth_window)
+        saved_user = load_session()
+        if saved_user:
+            # Auto-login: skip the auth window entirely
+            role_win = auth_window.build_role_window(saved_user)
+            center_window(role_win)
+            role_win.show()
+        else:
+            auth_window.show()
+            center_window(auth_window)
 
     QTimer.singleShot(2000, show_auth)
 
