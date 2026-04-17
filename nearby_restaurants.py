@@ -269,10 +269,11 @@ class RestaurantFetchThread(QThread):
 # ── UI Widgets ────────────────────────────────────────────────────────────────
 
 class RestaurantCard(QFrame):
-    def __init__(self, restaurant, parent=None):
+    def __init__(self, restaurant, on_view_details=None, parent=None):
         super().__init__(parent)
         r = restaurant
         cat_color = CATEGORY_COLORS.get(r["category"], "#6b7280")
+        self.on_view_details = on_view_details
 
         self.setStyleSheet(f"""
             QFrame {{ background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; }}
@@ -297,7 +298,6 @@ class RestaurantCard(QFrame):
         info = QVBoxLayout()
         info.setSpacing(2)
 
-        # Name row with optional LIVE badge
         name_row = QHBoxLayout()
         name_row.setSpacing(8)
         name_lbl = QLabel(r["name"])
@@ -331,21 +331,28 @@ class RestaurantCard(QFrame):
         info.addWidget(rating_lbl)
         info.addWidget(meta_lbl)
 
-        btn = QPushButton("Order Now")
-        btn.setFixedSize(100, 36)
+        btn = QPushButton("View Details")
+        btn.setFixedSize(110, 36)
         btn.setStyleSheet("""
             QPushButton { background: #f0b100; color: white; border: none;
                 border-radius: 8px; font-size: 12px; font-weight: 700; }
             QPushButton:hover { background: #d99f00; }
         """)
-        btn.clicked.connect(lambda: QMessageBox.information(
-            self, "Coming Soon",
-            f"Ordering from {r['name']} will be available in Sprint 2!"
-        ))
+        btn.clicked.connect(lambda: self._open_details(r))
 
         layout.addWidget(badge)
         layout.addLayout(info, stretch=1)
         layout.addWidget(btn, alignment=Qt.AlignVCenter)
+
+    def _open_details(self, restaurant):
+        if self.on_view_details:
+            self.on_view_details(restaurant)
+        else:
+            QMessageBox.information(
+                self,
+                "Restaurant Details",
+                f"Selected: {restaurant['name']}"
+            )
 
 
 # ── Main embedded widget ──────────────────────────────────────────────────────
@@ -353,6 +360,7 @@ class RestaurantCard(QFrame):
 class NearbyRestaurantsWidget(QWidget):
     """Embedded widget — no new window. Emits go_back on Back button press."""
     go_back = pyqtSignal()
+    restaurant_selected = pyqtSignal(dict)
 
     def __init__(self, user_data, parent=None):
         super().__init__(parent)
@@ -407,10 +415,28 @@ class NearbyRestaurantsWidget(QWidget):
         cl.setSpacing(10)
 
         cs = """
-            QComboBox { border: 1px solid #d1d5db; border-radius: 8px;
-                padding: 6px 10px; font-size: 13px; background: white; }
-            QComboBox:focus { border: 2px solid #f0b100; }
-        """
+    QComboBox {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 13px;
+        background: white;
+        color: #111827;
+    }
+
+    QComboBox:focus {
+        border: 2px solid #f0b100;
+    }
+
+    QComboBox QAbstractItemView {
+        background: white;
+        color: #111827;
+        border: 1px solid #d1d5db;
+        selection-background-color: #f0b100;
+        selection-color: white;
+        outline: 0;
+    }
+"""
 
         loc_lbl = QLabel("📍 Location:")
         loc_lbl.setStyleSheet("color: #374151; font-weight: 600; font-size: 13px;")
@@ -617,7 +643,7 @@ class NearbyRestaurantsWidget(QWidget):
                 "color: #374151; font-size: 13px; padding: 12px; background: #f9fafb; font-weight: 600;"
             )
             for i, r in enumerate(restaurants):
-                self.results_layout.insertWidget(i, RestaurantCard(r))
+                self.results_layout.insertWidget(i, RestaurantCard(r, on_view_details=self.restaurant_selected.emit))
 
     def _clear_results(self):
         while self.results_layout.count() > 1:

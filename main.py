@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QStackedWidget
 )
 from nearby_restaurants import NearbyRestaurantsWidget
+from restaurant_details import RestaurantDetailsWidget
 
 SPLASH_PATH = "splashscreen.png"
 SIDE_IMAGE_PATH = "sidescreen.png"
@@ -347,7 +348,11 @@ class RoleWindow(QMainWindow):
         # Build nearby restaurants page
         self.nearby_widget = NearbyRestaurantsWidget(self.user_data)
         self.nearby_widget.go_back.connect(lambda: self.stack.setCurrentIndex(0))
+        self.nearby_widget.restaurant_selected.connect(self._open_restaurant_details)
         self.stack.addWidget(self.nearby_widget)  # index 1
+        self.restaurant_details_widget = RestaurantDetailsWidget(self.user_data)
+        self.restaurant_details_widget.go_back.connect(lambda: self.stack.setCurrentIndex(1))
+        self.stack.addWidget(self.restaurant_details_widget)  # index 2
 
     def _logout(self):
         clear_session()
@@ -360,6 +365,11 @@ class RoleWindow(QMainWindow):
 
     def _open_nearby_restaurants(self):
         self.stack.setCurrentIndex(1)
+        
+    def _open_restaurant_details(self, restaurant):
+        self.restaurant_details_widget.set_restaurant(restaurant)
+        self.stack.setCurrentIndex(2)
+
 class RestaurantDashboard(QMainWindow):
     def __init__(self, user_data):
         super().__init__()
