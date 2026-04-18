@@ -1,9 +1,10 @@
-order_id,restaurant_id,items,status
-101,R1,Pizza Margherita,Pending
-102,R1,Burger Combo,Pending
-103,R2,Pasta Alfredo,Pending
+order_id,restaurant_id,restaurant_name,user_email,items,subtotal,delivery_fee,total,address,payment_method,status,timestamp
+101,R1,Legacy Restaurant,N/A,Pizza Margherita,0,0,0,N/A,N/A,Pending,N/A
+102,R1,Legacy Restaurant,N/A,Burger Combo,0,0,0,N/A,N/A,Pending,N/A
+103,R2,Legacy Restaurant,N/A,Pasta Alfredo,0,0,0,N/A,N/A,Pending,N/A
 WAS-EDE108E3,OSM15,El Tahrir,mariam@example.com,2x House Special (EGP 99.00),198.00,5.00,203.00,"agora, cairo",cash,Pending,2026-04-18T12:10:24
 WAS-F10355B6,OSM15,El Tahrir,mariam@example.com,1x House Special (EGP 99.00),99.00,5.00,104.00,"agora, cairo",card,Pending,2026-04-18T13:26:32
 WAS-75329842,OSM15,El Tahrir,mariam@example.com,1x House Special (EGP 99.00),99.00,5.00,104.00,"cairo, cairo",card,Pending,2026-04-18T13:28:36
 WAS-CB2B941F,R01,Koshary El Tahrir,mariam@example.com,1x Large Koshary (EGP 55.00),55.00,5.00,60.00,"garden 8, street",card,Pending,2026-04-18T13:43:42
 WAS-64DD6CF7,R01,Koshary El Tahrir,mariam@example.com,1x Large Koshary (EGP 55.00),55.00,5.00,60.00,"kc, ck",card,Pending,2026-04-18T13:44:37
+WAS-CF26939A,R03,Felfela Restaurant,mariam@example.com,1x Chicken Shawerma Plate (EGP 110.00),110.00,10.00,120.00,"1st Settlement, 1, New Cairo",cash,Pending,2026-04-18T14:30:07

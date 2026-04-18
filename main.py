@@ -18,7 +18,11 @@ SIDE_IMAGE_PATH = "sidescreen.png"
 CSV_PATH = "users_data.csv"
 CSV_HEADERS = ["full_name", "email", "phone", "password", "role"]
 ORDERS_CSV = "orders_data.csv"
-ORDERS_HEADERS = ["order_id", "restaurant_id", "items", "status"]
+ORDERS_HEADERS = [
+    "order_id", "restaurant_id", "restaurant_name",
+    "user_email", "items", "subtotal", "delivery_fee",
+    "total", "address", "payment_method", "status", "timestamp"
+]
 SESSION_PATH = "session.json"
 
 DUMMY_USERS = [
@@ -54,6 +58,11 @@ def ensure_csv_exists():
         writer = csv.DictWriter(file, fieldnames=CSV_HEADERS)
         writer.writeheader()
         writer.writerows(DUMMY_USERS)
+
+    if not os.path.exists(ORDERS_CSV):
+        with open(ORDERS_CSV, "w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=ORDERS_HEADERS)
+            writer.writeheader()
 
 
 def load_users():
@@ -119,9 +128,30 @@ def load_orders():
     if not os.path.exists(ORDERS_CSV):
         return orders
     with open(ORDERS_CSV, "r", newline="", encoding="utf-8") as file:
-        reader = csv.DictReader(file)
+        reader = csv.reader(file)
+        headers = next(reader, None)  # Skip the header
         for row in reader:
-            orders.append(row)
+            if not row: continue
+
+            # If it's the old 4-column format
+            if len(row) == 4:
+                order_dict = {
+                    "order_id": row[0],
+                    "restaurant_id": row[1],
+                    "items": row[2],
+                    "status": row[3],
+                    "restaurant_name": "Legacy Restaurant",
+                    "user_email": "N/A", "subtotal": "0", "delivery_fee": "0",
+                    "total": "0", "address": "N/A", "payment_method": "N/A", "timestamp": "N/A"
+                }
+            # If it's the new 12-column format
+            else:
+                order_dict = {}
+                for i, h in enumerate(ORDERS_HEADERS):
+                    # Fill with "N/A" if the row is unexpectedly short
+                    order_dict[h] = row[i] if i < len(row) else "N/A"
+
+            orders.append(order_dict)
     return orders
 
 
@@ -970,6 +1000,19 @@ def main():
         sys.exit(1)
 
     ensure_csv_exists()
+
+    # --- ADD THIS START ---
+    # This repairs your orders_data.csv header without deleting your data
+    if os.path.exists(ORDERS_CSV):
+        with open(ORDERS_CSV, 'r', encoding='utf-8') as f:
+            first_line = f.readline()
+
+        # If the new 'restaurant_name' column is missing from the first line
+        if "restaurant_name" not in first_line:
+            # We call your update function with a fake ID.
+            # This triggers a full load and a full write using the 12-column headers.
+            update_order_status_csv("REPAIR_HEADER_ONLY", "")
+    # --- ADD THIS END ---
 
     splash = SplashScreen()
     auth_window = AuthWindow()
