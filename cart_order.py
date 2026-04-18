@@ -748,14 +748,16 @@ class CartOrderWidget(QWidget):
             self._err_lbl.show()
             return
 
-        # Street and city must contain only letters, spaces, and common punctuation
         import re
-        if not re.fullmatch(r"[A-Za-z\u0600-\u06FF .,\-']+", street):
-            self._err_lbl.setText("⚠  Street address must contain letters only (no numbers or special characters).")
+        # Street validation
+        if not re.fullmatch(r"[A-Za-z\u0600-\u06FF0-9 .,\-']+", street) or not re.search(r"[A-Za-z\u0600-\u06FF]", street):
+            self._err_lbl.setText("⚠ Street address must contain letters.")
             self._err_lbl.show()
             return
-        if not re.fullmatch(r"[A-Za-z\u0600-\u06FF .,\-']+", city):
-            self._err_lbl.setText("⚠  City must contain letters only.")
+
+        # City validation
+        if not re.fullmatch(r"[A-Za-z\u0600-\u06FF0-9 .,\-']+", city) or not re.search(r"[A-Za-z\u0600-\u06FF]", city):
+            self._err_lbl.setText("⚠ City must contain letters.")
             self._err_lbl.show()
             return
 
@@ -764,8 +766,14 @@ class CartOrderWidget(QWidget):
             num = self._card_num.text().replace("-", "")   # strip hyphens before length check
             exp = self._card_exp.text()
             cvv = self._card_cvv.text()
-            if len(num) < 16 or len(cvv) < 3:
-                self._err_lbl.setText("⚠  Please enter a valid 16-digit card number and 3-digit CVV.")
+            # Card number validation
+            if not re.fullmatch(r"[0-9]{16}", num):
+                self._err_lbl.setText("⚠ Please enter a valid 16-digit card number.")
+                self._err_lbl.show()
+                return
+            # CVV validation
+            if not re.fullmatch(r"[0-9]{3}", cvv):
+                self._err_lbl.setText("⚠ CVV must be exactly 3 digits.")
                 self._err_lbl.show()
                 return
             # CVV checking
