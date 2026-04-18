@@ -2,3 +2,4 @@ order_id,restaurant_id,items,status
 101,R1,Pizza Margherita,Pending
 102,R1,Burger Combo,Pending
 103,R2,Pasta Alfredo,Pending
+WAS-EDE108E3,OSM15,El Tahrir,mariam@example.com,2x House Special (EGP 99.00),198.00,5.00,203.00,"agora, cairo",cash,Pending,2026-04-18T12:10:24

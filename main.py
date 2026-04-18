@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
 )
 from nearby_restaurants import NearbyRestaurantsWidget
 from restaurant_details import RestaurantDetailsWidget
+from cart_order import CartOrderWidget
 
 SPLASH_PATH = "splashscreen.png"
 SIDE_IMAGE_PATH = "sidescreen.png"
@@ -354,6 +355,18 @@ class RoleWindow(QMainWindow):
         self.restaurant_details_widget.go_back.connect(lambda: self.stack.setCurrentIndex(1))
         self.stack.addWidget(self.restaurant_details_widget)  # index 2
 
+        # Cart + Checkout widget (index 3)
+        _placeholder = {"id": "R01", "name": "", "fee": 0,
+                        "rating": 0, "delivery_time": 0,
+                        "distance_km": 0, "category": ""}
+        self.cart_widget = CartOrderWidget(_placeholder, self.user_data)
+        self.cart_widget.go_back_to_nearby.connect(lambda: self.stack.setCurrentIndex(1))
+        self.cart_widget.go_back_to_restaurant.connect(lambda: self.stack.setCurrentIndex(2))
+        self.stack.addWidget(self.cart_widget)  # index 3
+
+        # Connect restaurant details "Order Now" -> cart
+        self.restaurant_details_widget.order_now.connect(self._open_cart)
+
     def _logout(self):
         clear_session()
         from PyQt5.QtWidgets import QApplication
@@ -365,10 +378,14 @@ class RoleWindow(QMainWindow):
 
     def _open_nearby_restaurants(self):
         self.stack.setCurrentIndex(1)
-        
+
     def _open_restaurant_details(self, restaurant):
         self.restaurant_details_widget.set_restaurant(restaurant)
         self.stack.setCurrentIndex(2)
+
+    def _open_cart(self, restaurant):
+        self.cart_widget.load_restaurant(restaurant)
+        self.stack.setCurrentIndex(3)
 
 class RestaurantDashboard(QMainWindow):
     def __init__(self, user_data):
