@@ -93,11 +93,13 @@ class MenuCategorySection(QFrame):
 
 
 class RestaurantDetailsWidget(QWidget):
-    go_back = pyqtSignal()
+    go_back  = pyqtSignal()
+    # NEW: emits the full restaurant dict when the user taps Order Now
+    order_now = pyqtSignal(dict)
 
     def __init__(self, user_data, parent=None):
         super().__init__(parent)
-        self.user_data = user_data
+        self.user_data  = user_data
         self.restaurant = None
         self._build_ui()
 
@@ -182,7 +184,7 @@ class RestaurantDetailsWidget(QWidget):
         r = self.restaurant
         menu_data = get_menu_for_restaurant(r["id"])
 
-        # Restaurant details card
+        # ── Restaurant details card ──
         details_card = QFrame()
         details_card.setStyleSheet("""
             QFrame {
@@ -220,13 +222,29 @@ class RestaurantDetailsWidget(QWidget):
 
         self.content_layout.addWidget(details_card)
 
-        # Menu title
+        # ── Order Now button ──
+        order_btn = QPushButton("🛒  Order Now")
+        order_btn.setFixedHeight(48)
+        order_btn.setStyleSheet("""
+            QPushButton {
+                background: #f0b100;
+                color: white;
+                border: none;
+                border-radius: 10px;
+                font-size: 14px;
+                font-weight: 700;
+            }
+            QPushButton:hover { background: #d99f00; }
+        """)
+        order_btn.clicked.connect(lambda: self.order_now.emit(self.restaurant))
+        self.content_layout.addWidget(order_btn)
+
+        # ── Menu ──
         menu_title = QLabel("Menu")
         menu_title.setFont(QFont("Arial", 18, QFont.Bold))
         menu_title.setStyleSheet("color: #111827;")
         self.content_layout.addWidget(menu_title)
 
-        # Menu categories
         categories = menu_data.get("categories", {})
         for category_name, items in categories.items():
             self.content_layout.addWidget(MenuCategorySection(category_name, items))
