@@ -12,7 +12,7 @@ import urllib.request, urllib.parse, json
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
-    QWidget, QLabel, QPushButton,
+    QWidget, QLabel, QPushButton, QLineEdit,
     QHBoxLayout, QVBoxLayout, QFrame, QScrollArea,
     QComboBox, QMessageBox, QProgressBar, QSizePolicy
 )
@@ -47,6 +47,18 @@ FALLBACK_RESTAURANTS = [
     {"id": "R26", "name": "Abou El Sid",              "address": "26 July St, Mohandessin",        "lat": 30.0560, "lon": 31.2050, "category": "Egyptian", "rating": 4.7, "delivery_time": 30, "fee": 18.0},
     {"id": "R27", "name": "Sequoia",                  "address": "Abu El Feda, Zamalek",           "lat": 30.0650, "lon": 31.2170, "category": "Grills",   "rating": 4.6, "delivery_time": 35, "fee": 25.0},
     {"id": "R28", "name": "Kimo's Fish",              "address": "Sphinx Square, Mohandessin",     "lat": 30.0580, "lon": 31.2070, "category": "Seafood",  "rating": 4.4, "delivery_time": 25, "fee": 20.0},
+    # Dokki
+    {"id": "R29", "name": "El Shabrawy Dokki",        "address": "Tahrir St, Dokki",               "lat": 30.0390, "lon": 31.2130, "category": "Egyptian", "rating": 4.3, "delivery_time": 15, "fee": 6.0},
+    {"id": "R30", "name": "Dokki Grill House",        "address": "Mohie El Din St, Dokki",         "lat": 30.0375, "lon": 31.2100, "category": "Grills",   "rating": 4.2, "delivery_time": 20, "fee": 12.0},
+    {"id": "R31", "name": "Café Greco Dokki",         "address": "Syria St, Dokki",                "lat": 30.0400, "lon": 31.2140, "category": "Cafe",     "rating": 4.1, "delivery_time": 18, "fee": 10.0},
+    # El Rehab
+    {"id": "R32", "name": "Rehab Koshary",            "address": "El Rehab City Mall, El Rehab",   "lat": 30.0730, "lon": 31.5010, "category": "Egyptian", "rating": 4.1, "delivery_time": 15, "fee": 5.0},
+    {"id": "R33", "name": "Pizza Roma Rehab",         "address": "Commercial Area, El Rehab",      "lat": 30.0710, "lon": 31.4990, "category": "Italian",  "rating": 4.0, "delivery_time": 30, "fee": 14.0},
+    {"id": "R34", "name": "Burger Spot Rehab",        "address": "Entrance 2, El Rehab",           "lat": 30.0725, "lon": 31.5020, "category": "Burgers",  "rating": 4.2, "delivery_time": 22, "fee": 10.0},
+    # Obour City
+    {"id": "R35", "name": "Fasahet Obour",            "address": "Industrial Zone, Obour City",    "lat": 30.2095, "lon": 31.4910, "category": "Egyptian", "rating": 4.0, "delivery_time": 20, "fee": 7.0},
+    {"id": "R36", "name": "Burger House Obour",       "address": "Central District, Obour City",   "lat": 30.2110, "lon": 31.4895, "category": "Burgers",  "rating": 3.9, "delivery_time": 25, "fee": 10.0},
+    {"id": "R37", "name": "Shawarma Palace Obour",    "address": "Main St, Obour City",            "lat": 30.2085, "lon": 31.4920, "category": "Lebanese", "rating": 4.1, "delivery_time": 18, "fee": 8.0},
 ]
 
 LOCATION_PRESETS = {
@@ -103,13 +115,14 @@ def fetch_osm_restaurants(lat, lon, radius_km):
     """
     radius_m = int(radius_km * 1000)
     query = (
-        f'[out:json][timeout:15];'
+        f'[out:json][timeout:25];'
         f'('
         f'  node["amenity"="restaurant"](around:{radius_m},{lat},{lon});'
         f'  node["amenity"="fast_food"](around:{radius_m},{lat},{lon});'
         f'  node["amenity"="cafe"](around:{radius_m},{lat},{lon});'
+        f'  node["amenity"="food_court"](around:{radius_m},{lat},{lon});'
         f');'
-        f'out body 40;'
+        f'out body 80;'
     )
     try:
         data = urllib.parse.urlencode({"data": query}).encode()
@@ -118,7 +131,7 @@ def fetch_osm_restaurants(lat, lon, radius_km):
             data=data,
             headers={"User-Agent": "WasalyApp/1.0 (student project)"}
         )
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with urllib.request.urlopen(req, timeout=25) as r:
             result = json.loads(r.read().decode())
 
         restaurants = []
@@ -176,9 +189,9 @@ def fetch_osm_restaurants(lat, lon, radius_km):
                 "lat": el["lat"],
                 "lon": el["lon"],
                 "category": category,
-                "rating": 4.0,          # OSM has no ratings; shown as neutral
-                "delivery_time": max(10, int(dist * 6)),   # rough estimate
-                "fee": round(max(5, dist * 3), 0),
+                "rating": 4.0,
+                "delivery_time": max(20, int(dist * 4) + 10),  # ~15 km/h Cairo avg + 10 min prep
+                "fee": round(max(10, dist * 4), 0),             # 4 EGP/km, min 10
                 "distance_km": round(dist, 2),
                 "live": True,           # flag to show "Live" badge
             })
@@ -213,7 +226,86 @@ def find_closest_preset(lat, lon):
     return best_name
 
 
+def geocode_address(query):
+    """Convert a free-text address to (lat, lon, display_name) via Nominatim. Returns None on failure."""
+    params = urllib.parse.urlencode({
+        "q": query,
+        "format": "json",
+        "limit": 1,
+        "countrycodes": "eg",
+        "addressdetails": 0,
+    })
+    url = f"https://nominatim.openstreetmap.org/search?{params}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "WasalyApp/1.0 (student project)"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            results = json.loads(r.read().decode())
+        if results:
+            r0 = results[0]
+            # Take only the first meaningful part of the display name
+            name = r0.get("display_name", query).split(",")[0].strip()
+            return float(r0["lat"]), float(r0["lon"]), name
+    except Exception:
+        pass
+    return None
+
+
+def try_windows_gps():
+    """
+    Attempt precise location via Windows Location Services (WiFi/GPS).
+    Returns (lat, lon) or None. Only runs on Windows.
+    """
+    import sys, subprocess
+    if sys.platform != "win32":
+        return None
+    ps = (
+        "try {"
+        "  Add-Type -AssemblyName System.Device;"
+        "  $w = New-Object System.Device.Location.GeoCoordinateWatcher([System.Device.Location.GeoPositionAccuracy]::High);"
+        "  $w.Start();"
+        "  $end = [datetime]::Now.AddSeconds(7);"
+        "  while ([datetime]::Now -lt $end -and $w.Position.Location.IsUnknown) { Start-Sleep -Milliseconds 400 };"
+        "  if (-not $w.Position.Location.IsUnknown) {"
+        "    Write-Output \"$($w.Position.Location.Latitude),$($w.Position.Location.Longitude)\""
+        "  } else { Write-Output 'FAIL' };"
+        "  $w.Stop()"
+        "} catch { Write-Output 'FAIL' }"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+            capture_output=True, text=True, timeout=14
+        )
+        out = r.stdout.strip().split("\n")[-1].strip()
+        if out != "FAIL" and "," in out:
+            lat, lon = map(float, out.split(","))
+            return lat, lon
+    except Exception:
+        pass
+    return None
+
+
 # ── Threads ───────────────────────────────────────────────────────────────────
+
+class GeocodeFetchThread(QThread):
+    """Geocodes a free-text address in the background via Nominatim."""
+    geocode_done  = pyqtSignal(float, float, str)
+    geocode_error = pyqtSignal(str)
+
+    def __init__(self, query):
+        super().__init__()
+        self.query = query
+
+    def run(self):
+        result = geocode_address(self.query)
+        if result:
+            lat, lon, name = result
+            self.geocode_done.emit(lat, lon, name)
+        else:
+            self.geocode_error.emit(
+                f"Could not find \"{self.query}\". Try adding \"Cairo\" or a neighbourhood name."
+            )
+
 
 class LocationFetchThread(QThread):
     location_found = pyqtSignal(float, float, str)
@@ -226,21 +318,31 @@ class LocationFetchThread(QThread):
 
     def run(self):
         import time
-        time.sleep(0.8)
+        time.sleep(0.4)
         if self.manual_coords:
             self.location_found.emit(self.manual_coords[0], self.manual_coords[1], self.manual_name)
             return
+
+        # 1) Try Windows Location Services (WiFi / GPS)
+        gps = try_windows_gps()
+        if gps:
+            lat, lon = gps
+            name = find_closest_preset(lat, lon) or "Your Location"
+            self.location_found.emit(lat, lon, name)
+            return
+
+        # 2) Fall back to IP geolocation
         try:
             with urllib.request.urlopen("https://ipapi.co/json/", timeout=6) as r:
                 data = json.loads(r.read().decode())
             lat = float(data["latitude"])
             lon = float(data["longitude"])
-            # Use district/suburb if available, fall back to city
-            city = (data.get("district") or data.get("city") or "Your Location")
+            city = data.get("district") or data.get("city") or "Your Location"
             self.location_found.emit(lat, lon, city)
         except Exception:
             self.location_error.emit(
-                "Could not detect location automatically. Please select one from the dropdown and click Use Selected."
+                "Could not detect your location. Type your address in the search bar above, "
+                "or choose an area from the dropdown."
             )
 
 
@@ -370,6 +472,7 @@ class NearbyRestaurantsWidget(QWidget):
         self.user_location_name = None
         self.location_thread = None
         self.fetch_thread = None
+        self.geocode_thread = None
         self._build_ui()
 
     def _build_ui(self):
@@ -377,7 +480,7 @@ class NearbyRestaurantsWidget(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Header
+        # ── Header ──────────────────────────────────────────────────────────
         header = QFrame()
         header.setStyleSheet("background: #ffffff; border-bottom: 1px solid #e5e7eb;")
         header.setFixedHeight(64)
@@ -407,56 +510,76 @@ class NearbyRestaurantsWidget(QWidget):
         hl.addWidget(user_lbl)
         root.addWidget(header)
 
-        # Controls
+        # ── Address search bar ───────────────────────────────────────────────
+        search_bar = QFrame()
+        search_bar.setStyleSheet(
+            "QFrame { background: #fffbeb; border-bottom: 1px solid #fde68a; }"
+        )
+        search_bar.setFixedHeight(66)
+        sl = QHBoxLayout(search_bar)
+        sl.setContentsMargins(24, 12, 24, 12)
+        sl.setSpacing(10)
+
+        search_icon = QLabel("📍")
+        search_icon.setStyleSheet("font-size: 18px; background: transparent;")
+
+        self.address_input = QLineEdit()
+        self.address_input.setPlaceholderText(
+            "Type your street or area  (e.g. \"10 Tahrir Square\" or \"Madinaty Cairo\")"
+        )
+        self.address_input.setFixedHeight(42)
+        self.address_input.setStyleSheet("""
+            QLineEdit {
+                border: 1.5px solid #fbbf24; border-radius: 10px;
+                padding: 8px 14px; font-size: 14px; background: white; color: #111827;
+            }
+            QLineEdit:focus { border: 2px solid #f0b100; }
+        """)
+        self.address_input.returnPressed.connect(self._search_address)
+
+        self.search_btn = QPushButton("Search →")
+        self.search_btn.setFixedHeight(42)
+        self.search_btn.setMinimumWidth(110)
+        self.search_btn.setStyleSheet("""
+            QPushButton { background: #f0b100; color: white; border: none;
+                border-radius: 10px; padding: 0 18px; font-size: 13px; font-weight: 700; }
+            QPushButton:hover { background: #d99f00; }
+            QPushButton:disabled { background: #9ca3af; }
+        """)
+        self.search_btn.clicked.connect(self._search_address)
+
+        sl.addWidget(search_icon)
+        sl.addWidget(self.address_input, stretch=1)
+        sl.addWidget(self.search_btn)
+        root.addWidget(search_bar)
+
+        # ── Preset + auto-detect controls ────────────────────────────────────
         controls = QFrame()
         controls.setStyleSheet("background: #ffffff; border-bottom: 1px solid #e5e7eb;")
         cl = QHBoxLayout(controls)
-        cl.setContentsMargins(24, 12, 24, 12)
+        cl.setContentsMargins(24, 10, 24, 10)
         cl.setSpacing(10)
 
         cs = """
     QComboBox {
-        border: 1px solid #d1d5db;
-        border-radius: 8px;
-        padding: 6px 10px;
-        font-size: 13px;
-        background: white;
-        color: #111827;
+        border: 1px solid #d1d5db; border-radius: 8px;
+        padding: 6px 10px; font-size: 13px; background: white; color: #111827;
     }
-
-    QComboBox:focus {
-        border: 2px solid #f0b100;
-    }
-
+    QComboBox:focus { border: 2px solid #f0b100; }
     QComboBox QAbstractItemView {
-        background: white;
-        color: #111827;
-        border: 1px solid #d1d5db;
-        selection-background-color: #f0b100;
-        selection-color: white;
-        outline: 0;
+        background: white; color: #111827; border: 1px solid #d1d5db;
+        selection-background-color: #f0b100; selection-color: white; outline: 0;
     }
 """
-
-        loc_lbl = QLabel("📍 Location:")
-        loc_lbl.setStyleSheet("color: #374151; font-weight: 600; font-size: 13px;")
+        sep_lbl = QLabel("— or pick an area —")
+        sep_lbl.setStyleSheet("color: #9ca3af; font-size: 12px;")
 
         self.location_combo = QComboBox()
         self.location_combo.addItems(list(LOCATION_PRESETS.keys()))
-        self.location_combo.setFixedWidth(220)
+        self.location_combo.setFixedWidth(210)
         self.location_combo.setStyleSheet(cs)
 
-        self.detect_btn = QPushButton("📡  Auto-Detect (IP)")
-        self.detect_btn.setFixedHeight(36)
-        self.detect_btn.setStyleSheet("""
-            QPushButton { background: #111827; color: white; border: none;
-                border-radius: 8px; padding: 0 14px; font-size: 13px; font-weight: 600; }
-            QPushButton:hover { background: #374151; }
-            QPushButton:disabled { background: #9ca3af; }
-        """)
-        self.detect_btn.clicked.connect(self._detect_location)
-
-        self.use_btn = QPushButton("✔  Use Selected")
+        self.use_btn = QPushButton("✔  Use Area")
         self.use_btn.setFixedHeight(36)
         self.use_btn.setStyleSheet("""
             QPushButton { background: #f0b100; color: white; border: none;
@@ -466,11 +589,21 @@ class NearbyRestaurantsWidget(QWidget):
         """)
         self.use_btn.clicked.connect(self._use_selected_location)
 
+        self.detect_btn = QPushButton("📡  Auto-Detect GPS")
+        self.detect_btn.setFixedHeight(36)
+        self.detect_btn.setStyleSheet("""
+            QPushButton { background: #111827; color: white; border: none;
+                border-radius: 8px; padding: 0 14px; font-size: 13px; font-weight: 600; }
+            QPushButton:hover { background: #374151; }
+            QPushButton:disabled { background: #9ca3af; }
+        """)
+        self.detect_btn.clicked.connect(self._detect_location)
+
         r_lbl = QLabel("Radius:")
         r_lbl.setStyleSheet("color: #374151; font-size: 13px; font-weight: 600;")
         self.radius_combo = QComboBox()
         self.radius_combo.addItems(["2 km", "5 km", "10 km", "15 km", "20 km"])
-        self.radius_combo.setCurrentIndex(2)
+        self.radius_combo.setCurrentIndex(1)   # default 5 km
         self.radius_combo.setFixedWidth(90)
         self.radius_combo.setStyleSheet(cs)
         self.radius_combo.currentIndexChanged.connect(self._refresh_results)
@@ -483,7 +616,7 @@ class NearbyRestaurantsWidget(QWidget):
         self.sort_combo.setStyleSheet(cs)
         self.sort_combo.currentIndexChanged.connect(self._refresh_results)
 
-        cl.addWidget(loc_lbl)
+        cl.addWidget(sep_lbl)
         cl.addWidget(self.location_combo)
         cl.addWidget(self.use_btn)
         cl.addWidget(self.detect_btn)
@@ -507,7 +640,7 @@ class NearbyRestaurantsWidget(QWidget):
         root.addWidget(self.progress)
 
         # Status
-        self.status_label = QLabel("Select a location or click 'Detect My Location' to find nearby restaurants.")
+        self.status_label = QLabel("Type your address above, pick an area, or click Auto-Detect GPS to find restaurants.")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet(
             "color: #6b7280; font-size: 13px; padding: 12px; background: #f9fafb;"
@@ -531,7 +664,10 @@ class NearbyRestaurantsWidget(QWidget):
     def _set_loading(self, loading, msg=""):
         self.detect_btn.setEnabled(not loading)
         self.use_btn.setEnabled(not loading)
-        self.detect_btn.setText("📡  Detecting…" if loading else "📡  Detect My Location")
+        self.search_btn.setEnabled(not loading)
+        self.address_input.setEnabled(not loading)
+        self.detect_btn.setText("📡  Detecting…" if loading else "📡  Auto-Detect GPS")
+        self.search_btn.setText("Searching…" if loading else "Search →")
         self.progress.setVisible(loading)
         if msg:
             self.status_label.setText(msg)
@@ -548,6 +684,31 @@ class NearbyRestaurantsWidget(QWidget):
         self.location_thread.location_error.connect(self._show_error)
         self.location_thread.start()
 
+    def _search_address(self):
+        query = self.address_input.text().strip()
+        if not query:
+            self._show_error("Please type an address or area name to search.")
+            return
+        self._set_loading(True, f"Looking up \"{query}\"…")
+        self._clear_results()
+        self.geocode_thread = GeocodeFetchThread(query)
+        self.geocode_thread.geocode_done.connect(self._on_geocode_done)
+        self.geocode_thread.geocode_error.connect(self._show_error)
+        self.geocode_thread.start()
+
+    def _on_geocode_done(self, lat, lon, name):
+        self.user_lat, self.user_lon = lat, lon
+        self._ip_based = False
+        self.user_location_name = name
+        closest = find_closest_preset(lat, lon)
+        if closest:
+            idx = self.location_combo.findText(closest)
+            if idx >= 0:
+                self.location_combo.blockSignals(True)
+                self.location_combo.setCurrentIndex(idx)
+                self.location_combo.blockSignals(False)
+        self._fetch_restaurants()
+
     def _use_selected_location(self):
         selected = self.location_combo.currentText()
         coords = LOCATION_PRESETS.get(selected)
@@ -563,9 +724,9 @@ class NearbyRestaurantsWidget(QWidget):
 
     def _on_location_found(self, lat, lon, name):
         self.user_lat, self.user_lon = lat, lon
-        self._ip_based = not bool(self.location_thread.manual_coords)
+        is_manual = bool(getattr(self.location_thread, "manual_coords", None))
+        self._ip_based = not is_manual
 
-        # Sync dropdown to closest preset
         closest = find_closest_preset(lat, lon)
         self.user_location_name = closest if closest else name
         if closest:
@@ -635,9 +796,9 @@ class NearbyRestaurantsWidget(QWidget):
                 f"📍 {self.user_location_name}  ·  No results within {radius:.0f} km  ·  {source_tag}"
             )
         else:
-            ip_note = "  ·  ⚠️ IP location may be inaccurate — select your area manually for better results" if getattr(self, "_ip_based", False) else ""
+            loc_note = "  ·  ⚠️ IP-based — may be off by a few km" if getattr(self, "_ip_based", False) else ""
             self.status_label.setText(
-                f"📍 {self.user_location_name}  ·  {len(restaurants)} place(s) within {radius:.0f} km  ·  {source_tag}{ip_note}"
+                f"📍 {self.user_location_name}  ·  {len(restaurants)} place(s) within {radius:.0f} km  ·  {source_tag}{loc_note}"
             )
             self.status_label.setStyleSheet(
                 "color: #374151; font-size: 13px; padding: 12px; background: #f9fafb; font-weight: 600;"

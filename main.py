@@ -7,7 +7,7 @@ from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QMainWindow, QLabel, QPushButton,
     QLineEdit, QHBoxLayout, QVBoxLayout, QFrame, QMessageBox,
-    QCheckBox, QStackedWidget
+    QCheckBox, QStackedWidget, QComboBox, QScrollArea, QSizePolicy
 )
 from nearby_restaurants import NearbyRestaurantsWidget
 from restaurant_details import RestaurantDetailsWidget
@@ -421,103 +421,412 @@ class RestaurantDashboard(QMainWindow):
     def __init__(self, user_data):
         super().__init__()
         self.user_data = user_data
-        role = user_data.get("role", "Restaurant")
         name = user_data.get("full_name", "Restaurant Owner")
+        self._active_filter = "All"
+        self._filter_btns = {}
 
-        self.setWindowTitle(f"Wasaly - {role} Dashboard")
-        self.resize(900, 600)
-        self.setStyleSheet("background: #ffffff;")
+        self.setWindowTitle("Wasaly — Restaurant Portal")
+        self.resize(1100, 720)
+        self.setStyleSheet("background: #f9fafb;")
 
         central = QWidget()
         self.setCentralWidget(central)
 
-        self.layout = QVBoxLayout(central)
-        self.layout.setContentsMargins(40, 40, 40, 40)
-        self.layout.setSpacing(18)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        # Header matching Jana's style
-        title = QLabel("Restaurant Dashboard")
-        title.setFont(QFont("Arial", 24, QFont.Bold))
-        title.setStyleSheet("color: #111827;")
+        # ── Sidebar ───────────────────────────────────────────────────────────
+        sidebar = QFrame()
+        sidebar.setFixedWidth(240)
+        sidebar.setStyleSheet("QFrame { background: #111827; }")
+        sb = QVBoxLayout(sidebar)
+        sb.setContentsMargins(24, 32, 24, 32)
+        sb.setSpacing(0)
 
-        welcome = QLabel(f"Welcome back, {name}")
-        welcome.setFont(QFont("Arial", 16))
-        welcome.setStyleSheet("color: #374151;")
+        logo_lbl = QLabel("Wasaly")
+        logo_lbl.setFont(QFont("Arial", 22, QFont.Bold))
+        logo_lbl.setStyleSheet("color: #f0b100; background: transparent;")
+        sb.addWidget(logo_lbl)
 
-        self.layout.addWidget(title)
-        self.layout.addWidget(welcome)
+        portal_lbl = QLabel("Restaurant Portal")
+        portal_lbl.setStyleSheet("color: #6b7280; font-size: 12px; background: transparent;")
+        sb.addWidget(portal_lbl)
+        sb.addSpacing(32)
 
-        # Area to hold the orders
-        self.orders_container = QVBoxLayout()
-        self.orders_container.setSpacing(15)
-        self.layout.addLayout(self.orders_container)
-        self.layout.addStretch()
+        avatar_lbl = QLabel(name[0].upper() if name else "R")
+        avatar_lbl.setFixedSize(56, 56)
+        avatar_lbl.setAlignment(Qt.AlignCenter)
+        avatar_lbl.setStyleSheet(
+            "background: #f0b100; color: white; border-radius: 28px;"
+            " font-size: 22px; font-weight: bold;"
+        )
+        sb.addWidget(avatar_lbl, alignment=Qt.AlignLeft)
+        sb.addSpacing(12)
+
+        name_lbl = QLabel(name)
+        name_lbl.setFont(QFont("Arial", 14, QFont.Bold))
+        name_lbl.setStyleSheet("color: #f9fafb; background: transparent;")
+        name_lbl.setWordWrap(True)
+        sb.addWidget(name_lbl)
+
+        email_lbl = QLabel(user_data.get("email", ""))
+        email_lbl.setStyleSheet("color: #9ca3af; font-size: 11px; background: transparent;")
+        email_lbl.setWordWrap(True)
+        sb.addWidget(email_lbl)
+        sb.addSpacing(24)
+
+        div = QFrame()
+        div.setFixedHeight(1)
+        div.setStyleSheet("background: #374151;")
+        sb.addWidget(div)
+        sb.addSpacing(20)
+
+        online_lbl = QLabel("● Online")
+        online_lbl.setStyleSheet(
+            "color: #10b981; font-size: 12px; font-weight: 600; background: transparent;"
+        )
+        sb.addWidget(online_lbl)
+        sb.addStretch()
+
+        logout_btn = QPushButton("Sign Out")
+        logout_btn.setFixedHeight(40)
+        logout_btn.setStyleSheet("""
+            QPushButton {
+                background: #1f2937; color: #9ca3af;
+                border: 1px solid #374151; border-radius: 8px;
+                font-size: 13px; font-weight: 600;
+            }
+            QPushButton:hover { background: #374151; color: white; }
+        """)
+        logout_btn.clicked.connect(self._logout)
+        sb.addWidget(logout_btn)
+
+        root.addWidget(sidebar)
+
+        # ── Main area ─────────────────────────────────────────────────────────
+        main_area = QWidget()
+        main_layout = QVBoxLayout(main_area)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Top bar
+        topbar = QFrame()
+        topbar.setFixedHeight(64)
+        topbar.setStyleSheet("background: #ffffff; border-bottom: 1px solid #e5e7eb;")
+        tb = QHBoxLayout(topbar)
+        tb.setContentsMargins(32, 0, 32, 0)
+
+        page_title = QLabel("Order Management")
+        page_title.setFont(QFont("Arial", 18, QFont.Bold))
+        page_title.setStyleSheet("color: #111827;")
+
+        refresh_btn = QPushButton("↻  Refresh")
+        refresh_btn.setFixedHeight(36)
+        refresh_btn.setStyleSheet("""
+            QPushButton { background: #f3f4f6; color: #374151; border: none;
+                border-radius: 8px; padding: 0 16px; font-size: 13px; font-weight: 600; }
+            QPushButton:hover { background: #e5e7eb; }
+        """)
+        refresh_btn.clicked.connect(self.refresh_orders)
+
+        tb.addWidget(page_title)
+        tb.addStretch()
+        tb.addWidget(refresh_btn)
+        main_layout.addWidget(topbar)
+
+        # Stats bar
+        stats_bar = QFrame()
+        stats_bar.setFixedHeight(88)
+        stats_bar.setStyleSheet("background: #ffffff; border-bottom: 1px solid #e5e7eb;")
+        stats_row = QHBoxLayout(stats_bar)
+        stats_row.setContentsMargins(32, 12, 32, 12)
+        stats_row.setSpacing(16)
+
+        self.pending_stat   = self._stat_card("⏳ Pending",      "0", "#f59e0b")
+        self.accepted_stat  = self._stat_card("✅ Accepted",     "0", "#10b981")
+        self.rejected_stat  = self._stat_card("✗  Rejected",     "0", "#ef4444")
+        self.total_stat     = self._stat_card("📦 Total Orders", "0", "#6366f1")
+
+        for w in (self.pending_stat, self.accepted_stat, self.rejected_stat, self.total_stat):
+            stats_row.addWidget(w)
+        stats_row.addStretch()
+        main_layout.addWidget(stats_bar)
+
+        # Filter tabs
+        filter_bar = QFrame()
+        filter_bar.setFixedHeight(52)
+        filter_bar.setStyleSheet("background: #ffffff; border-bottom: 1px solid #e5e7eb;")
+        filter_row = QHBoxLayout(filter_bar)
+        filter_row.setContentsMargins(32, 0, 32, 0)
+        filter_row.setSpacing(4)
+
+        for label in ("All", "Pending", "Accepted", "Rejected"):
+            btn = QPushButton(label)
+            btn.setFixedHeight(36)
+            btn.clicked.connect(lambda _checked, l=label: self._set_filter(l))
+            self._filter_btns[label] = btn
+            filter_row.addWidget(btn)
+        filter_row.addStretch()
+        self._update_filter_styles()
+        main_layout.addWidget(filter_bar)
+
+        # Scrollable order list
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: #f9fafb; }")
+
+        self._orders_widget = QWidget()
+        self._orders_widget.setStyleSheet("background: #f9fafb;")
+        self._orders_layout = QVBoxLayout(self._orders_widget)
+        self._orders_layout.setContentsMargins(32, 24, 32, 24)
+        self._orders_layout.setSpacing(12)
+        self._orders_layout.addStretch()
+
+        scroll.setWidget(self._orders_widget)
+        main_layout.addWidget(scroll, stretch=1)
+
+        root.addWidget(main_area, stretch=1)
 
         self.refresh_orders()
 
-    def refresh_orders(self):
-        # Clear old order cards before redrawing
-        for i in reversed(range(self.orders_container.count())):
-            widget = self.orders_container.itemAt(i).widget()
-            if widget is not None:
-                widget.setParent(None)
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
-        orders = load_orders()
+    def _stat_card(self, label, value, color):
+        frame = QFrame()
+        frame.setFixedSize(170, 60)
+        frame.setStyleSheet(f"""
+            QFrame {{
+                background: {color}11;
+                border: 1px solid {color}33;
+                border-radius: 10px;
+            }}
+        """)
+        lay = QHBoxLayout(frame)
+        lay.setContentsMargins(14, 8, 14, 8)
+
+        count_lbl = QLabel(value)
+        count_lbl.setFont(QFont("Arial", 20, QFont.Bold))
+        count_lbl.setStyleSheet(f"color: {color}; background: transparent;")
+        count_lbl.setObjectName("count")
+
+        text_lbl = QLabel(label)
+        text_lbl.setStyleSheet("color: #6b7280; font-size: 12px; background: transparent;")
+        text_lbl.setWordWrap(True)
+
+        lay.addWidget(count_lbl)
+        lay.addWidget(text_lbl)
+        return frame
+
+    def _update_stat(self, card, value):
+        for child in card.children():
+            if isinstance(child, QLabel) and child.objectName() == "count":
+                child.setText(str(value))
+                break
+
+    def _update_filter_styles(self):
+        active = """
+            QPushButton { background: #f0b100; color: white; border: none;
+                border-radius: 8px; padding: 0 16px; font-size: 13px; font-weight: 600; }
+        """
+        inactive = """
+            QPushButton { background: transparent; color: #6b7280; border: none;
+                border-radius: 8px; padding: 0 16px; font-size: 13px; font-weight: 600; }
+            QPushButton:hover { background: #f3f4f6; color: #374151; }
+        """
+        for label, btn in self._filter_btns.items():
+            btn.setStyleSheet(active if label == self._active_filter else inactive)
+
+    def _set_filter(self, label):
+        self._active_filter = label
+        self._update_filter_styles()
+        self.refresh_orders()
+
+    def _logout(self):
+        clear_session()
+        self.auth_window = AuthWindow()
+        center_window(self.auth_window)
+        self.auth_window.show()
+        self.close()
+
+    # ── Order rendering ───────────────────────────────────────────────────────
+
+    def refresh_orders(self):
+        while self._orders_layout.count() > 1:
+            item = self._orders_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        all_orders = load_orders()
+
+        pending  = sum(1 for o in all_orders if o["status"] == "Pending")
+        accepted = sum(1 for o in all_orders if o["status"] == "Accepted")
+        rejected = sum(1 for o in all_orders if o["status"] == "Rejected")
+
+        self._update_stat(self.pending_stat,  pending)
+        self._update_stat(self.accepted_stat, accepted)
+        self._update_stat(self.rejected_stat, rejected)
+        self._update_stat(self.total_stat,    len(all_orders))
+
+        if self._active_filter != "All":
+            orders = [o for o in all_orders if o["status"] == self._active_filter]
+        else:
+            orders = all_orders
 
         if not orders:
-            empty = QLabel("No orders available.")
-            empty.setStyleSheet("color: #6b7280; font-size: 14px;")
-            self.orders_container.addWidget(empty)
+            msg = "No orders yet." if not all_orders else f"No {self._active_filter.lower()} orders."
+            empty = QLabel(msg)
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setStyleSheet(
+                "color: #9ca3af; font-size: 15px; padding: 60px;"
+                " background: transparent;"
+            )
+            self._orders_layout.insertWidget(0, empty)
             return
 
-        for order in orders:
-            # Create a card for each order using Jana's styling
-            card = QFrame()
-            card.setStyleSheet("""
-                QFrame {
-                    background: #f9fafb; 
-                    border: 1px solid #e5e7eb; 
-                    border-radius: 10px; 
-                }
+        for i, order in enumerate(orders):
+            self._orders_layout.insertWidget(i, self._build_order_card(order))
+
+    def _build_order_card(self, order):
+        status = order.get("status", "Pending")
+        STATUS_STYLE = {
+            "Pending":  ("#f59e0b", "#fffbeb"),
+            "Accepted": ("#10b981", "#ecfdf5"),
+            "Rejected": ("#ef4444", "#fef2f2"),
+        }
+        fg, bg = STATUS_STYLE.get(status, ("#6b7280", "#f9fafb"))
+
+        card = QFrame()
+        card.setStyleSheet("""
+            QFrame { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; }
+        """)
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(24, 18, 24, 18)
+        layout.setSpacing(12)
+
+        # — Top row: order ID + status badge —
+        top = QHBoxLayout()
+        oid_lbl = QLabel(f"Order #{order['order_id']}")
+        oid_lbl.setFont(QFont("Arial", 14, QFont.Bold))
+        oid_lbl.setStyleSheet("color: #111827; background: transparent;")
+
+        badge = QLabel(f"  {status}  ")
+        badge.setFixedHeight(26)
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setStyleSheet(
+            f"color: {fg}; background: {bg}; border: 1px solid {fg}55;"
+            " border-radius: 6px; font-size: 12px; font-weight: 700;"
+        )
+
+        top.addWidget(oid_lbl)
+        top.addStretch()
+        top.addWidget(badge)
+        layout.addLayout(top)
+
+        # — Divider —
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background: #f3f4f6;")
+        layout.addWidget(sep)
+
+        # — Details —
+        details = QHBoxLayout()
+        details.setSpacing(24)
+
+        left = QVBoxLayout()
+        left.setSpacing(5)
+
+        items_lbl = QLabel(f"🍽  {order.get('items', 'N/A')}")
+        items_lbl.setStyleSheet(
+            "color: #374151; font-size: 13px; background: transparent;"
+        )
+        items_lbl.setWordWrap(True)
+
+        customer_lbl = QLabel(f"👤  {order.get('user_email', 'N/A')}")
+        customer_lbl.setStyleSheet(
+            "color: #6b7280; font-size: 12px; background: transparent;"
+        )
+
+        addr_lbl = QLabel(f"📍  {order.get('address', 'N/A')}")
+        addr_lbl.setStyleSheet(
+            "color: #6b7280; font-size: 12px; background: transparent;"
+        )
+        addr_lbl.setWordWrap(True)
+
+        left.addWidget(items_lbl)
+        left.addWidget(customer_lbl)
+        left.addWidget(addr_lbl)
+
+        right = QVBoxLayout()
+        right.setSpacing(4)
+        right.setAlignment(Qt.AlignTop | Qt.AlignRight)
+
+        total_lbl = QLabel(f"EGP {order.get('total', '—')}")
+        total_lbl.setFont(QFont("Arial", 16, QFont.Bold))
+        total_lbl.setStyleSheet("color: #111827; background: transparent;")
+        total_lbl.setAlignment(Qt.AlignRight)
+
+        time_lbl = QLabel(f"🕐  {order.get('timestamp', 'N/A')}")
+        time_lbl.setStyleSheet(
+            "color: #9ca3af; font-size: 11px; background: transparent;"
+        )
+        time_lbl.setAlignment(Qt.AlignRight)
+
+        pay_lbl = QLabel(f"💳  {order.get('payment_method', 'N/A')}")
+        pay_lbl.setStyleSheet(
+            "color: #6b7280; font-size: 12px; background: transparent;"
+        )
+        pay_lbl.setAlignment(Qt.AlignRight)
+
+        right.addWidget(total_lbl)
+        right.addWidget(time_lbl)
+        right.addWidget(pay_lbl)
+
+        details.addLayout(left, stretch=1)
+        details.addLayout(right)
+        layout.addLayout(details)
+
+        # — Action buttons (pending only) —
+        if status == "Pending":
+            btn_row = QHBoxLayout()
+            btn_row.addStretch()
+
+            reject_btn = QPushButton("✗  Reject Order")
+            reject_btn.setFixedHeight(40)
+            reject_btn.setMinimumWidth(140)
+            reject_btn.setStyleSheet("""
+                QPushButton { background: #fef2f2; color: #ef4444; border: 1px solid #fecaca;
+                    border-radius: 8px; font-size: 13px; font-weight: 600; padding: 0 16px; }
+                QPushButton:hover { background: #ef4444; color: white; border-color: #ef4444; }
             """)
-            card_layout = QHBoxLayout(card)
-            card_layout.setContentsMargins(20, 20, 20, 20)
+            reject_btn.clicked.connect(
+                lambda _ch, oid=order["order_id"]: self.handle_action(oid, "Rejected")
+            )
 
-            # Order Info
-            info = QLabel(
-                f"<b>Order #{order['order_id']}</b><br><br>Items: {order['items']}<br>Status: <b>{order['status']}</b>")
-            info.setStyleSheet("color: #374151; font-size: 14px; border: none; background: transparent;")
-            card_layout.addWidget(info)
-            card_layout.addStretch()
+            accept_btn = QPushButton("✓  Accept Order")
+            accept_btn.setFixedHeight(40)
+            accept_btn.setMinimumWidth(140)
+            accept_btn.setStyleSheet("""
+                QPushButton { background: #10b981; color: white; border: none;
+                    border-radius: 8px; font-size: 13px; font-weight: 600; padding: 0 16px; }
+                QPushButton:hover { background: #059669; }
+            """)
+            accept_btn.clicked.connect(
+                lambda _ch, oid=order["order_id"]: self.handle_action(oid, "Accepted")
+            )
 
-            # Add Accept/Reject buttons only if Pending
-            if order['status'] == "Pending":
-                accept_btn = QPushButton("Accept")
-                accept_btn.setFixedSize(100, 40)
-                accept_btn.setStyleSheet("""
-                    QPushButton { background-color: #10b981; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; }
-                    QPushButton:hover { background-color: #059669; }
-                """)
-                accept_btn.clicked.connect(lambda ch, o=order['order_id']: self.handle_action(o, "Accepted"))
+            btn_row.addWidget(reject_btn)
+            btn_row.addSpacing(8)
+            btn_row.addWidget(accept_btn)
+            layout.addLayout(btn_row)
 
-                reject_btn = QPushButton("Reject")
-                reject_btn.setFixedSize(100, 40)
-                reject_btn.setStyleSheet("""
-                    QPushButton { background-color: #ef4444; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; }
-                    QPushButton:hover { background-color: #dc2626; }
-                """)
-                reject_btn.clicked.connect(lambda ch, o=order['order_id']: self.handle_action(o, "Rejected"))
-
-                card_layout.addWidget(accept_btn)
-                card_layout.addSpacing(10)
-                card_layout.addWidget(reject_btn)
-
-            self.orders_container.addWidget(card)
+        return card
 
     def handle_action(self, order_id, status):
         update_order_status_csv(order_id, status)
-        QMessageBox.information(self, "Order Updated", f"Order #{order_id} has been {status}.")
-        self.refresh_orders()  # Instantly update the UI
+        self.refresh_orders()
 
 
 class AuthWindow(QMainWindow):
@@ -734,6 +1043,28 @@ class AuthWindow(QMainWindow):
         self.password_input.setPlaceholderText("••••••••")
         self.password_input.setEchoMode(QLineEdit.Password)
 
+        self.confirm_label = QLabel("Confirm Password")
+        self.confirm_label.setObjectName("FieldLabel")
+        self.confirm_input = QLineEdit()
+        self.confirm_input.setPlaceholderText("••••••••")
+        self.confirm_input.setEchoMode(QLineEdit.Password)
+
+        self.role_label = QLabel("Account Type")
+        self.role_label.setObjectName("FieldLabel")
+        self.role_combo = QComboBox()
+        self.role_combo.addItems(["Customer", "Restaurant Owner"])
+        self.role_combo.setStyleSheet("""
+            QComboBox {
+                border: 1px solid #d1d5db; border-radius: 10px;
+                padding: 12px 14px; font-size: 14px; background: white; color: #111827;
+            }
+            QComboBox:focus { border: 2px solid #f0b100; }
+            QComboBox QAbstractItemView {
+                background: white; color: #111827; border: 1px solid #d1d5db;
+                selection-background-color: #f0b100; selection-color: white;
+            }
+        """)
+
         form_layout.addWidget(self.name_label)
         form_layout.addWidget(self.name_input)
         form_layout.addWidget(self.email_label)
@@ -742,6 +1073,10 @@ class AuthWindow(QMainWindow):
         form_layout.addWidget(self.phone_input)
         form_layout.addWidget(self.password_label)
         form_layout.addWidget(self.password_input)
+        form_layout.addWidget(self.confirm_label)
+        form_layout.addWidget(self.confirm_input)
+        form_layout.addWidget(self.role_label)
+        form_layout.addWidget(self.role_combo)
 
         login_row = QHBoxLayout()
         self.remember_check = QCheckBox("Remember me")
@@ -760,37 +1095,6 @@ class AuthWindow(QMainWindow):
         self.submit_button.clicked.connect(self.handle_submit)
         form_layout.addWidget(self.submit_button)
 
-        self.social_section = QWidget()
-        social_layout = QVBoxLayout(self.social_section)
-        social_layout.setContentsMargins(0, 10, 0, 0)
-        social_layout.setSpacing(14)
-
-        divider_row = QHBoxLayout()
-        left_div = QFrame()
-        left_div.setObjectName("Divider")
-        right_div = QFrame()
-        right_div.setObjectName("Divider")
-
-        or_label = QLabel("Or continue with")
-        or_label.setStyleSheet("color: #6b7280; font-size: 13px;")
-
-        divider_row.addWidget(left_div)
-        divider_row.addWidget(or_label)
-        divider_row.addWidget(right_div)
-
-        social_buttons = QHBoxLayout()
-        google_btn = QPushButton("Google")
-        google_btn.setObjectName("SocialButton")
-        github_btn = QPushButton("Facebook")
-        github_btn.setObjectName("SocialButton")
-
-        social_buttons.addWidget(google_btn)
-        social_buttons.addWidget(github_btn)
-
-        social_layout.addLayout(divider_row)
-        social_layout.addLayout(social_buttons)
-        form_layout.addWidget(self.social_section)
-
         right_outer.addWidget(form_container, alignment=Qt.AlignCenter)
         right_outer.addStretch()
 
@@ -806,39 +1110,43 @@ class AuthWindow(QMainWindow):
         self.update_mode()
 
     def update_mode(self):
+        _active = """
+            QPushButton#ToggleActive {
+                background: white; border: none; border-radius: 8px; padding: 10px;
+                font-size: 14px; font-weight: 600; color: #111827;
+            }
+        """
+        _inactive = """
+            QPushButton {
+                background: transparent; border: none; border-radius: 8px; padding: 10px;
+                font-size: 14px; font-weight: 600; color: #6b7280;
+            }
+            QPushButton:hover { color: #374151; }
+        """
         if self.is_login:
-            self.login_toggle.setObjectName("ToggleActive")
-            self.register_toggle.setObjectName("ToggleButton")
+            self.login_toggle.setStyleSheet(_active)
+            self.register_toggle.setStyleSheet(_inactive)
             self.submit_button.setText("Sign In")
             self.subtitle.setText("Welcome back! Please enter your details.")
 
-            self.name_label.hide()
-            self.name_input.hide()
-            self.phone_label.hide()
-            self.phone_input.hide()
-
+            self.name_label.hide(); self.name_input.hide()
+            self.phone_label.hide(); self.phone_input.hide()
+            self.confirm_label.hide(); self.confirm_input.hide()
+            self.role_label.hide(); self.role_combo.hide()
             self.remember_check.show()
             self.forgot_button.show()
-            self.social_section.show()
         else:
-            self.login_toggle.setObjectName("ToggleButton")
-            self.register_toggle.setObjectName("ToggleActive")
+            self.login_toggle.setStyleSheet(_inactive)
+            self.register_toggle.setStyleSheet(_active)
             self.submit_button.setText("Create Account")
             self.subtitle.setText("Create your account and get started.")
 
-            self.name_label.show()
-            self.name_input.show()
-            self.phone_label.show()
-            self.phone_input.show()
-
+            self.name_label.show(); self.name_input.show()
+            self.phone_label.show(); self.phone_input.show()
+            self.confirm_label.show(); self.confirm_input.show()
+            self.role_label.show(); self.role_combo.show()
             self.remember_check.hide()
             self.forgot_button.hide()
-            self.social_section.hide()
-
-        self.style().unpolish(self.login_toggle)
-        self.style().polish(self.login_toggle)
-        self.style().unpolish(self.register_toggle)
-        self.style().polish(self.register_toggle)
 
     def build_role_window(self, user_data):
         role = user_data.get("role", "User")
@@ -854,107 +1162,74 @@ class AuthWindow(QMainWindow):
         self.close()
 
     def show_forgot_password_info(self):
-        email = self.email_input.text().strip()
-        if not email:
-            QMessageBox.information(
-                self,
-                "Forgot Password",
-                "Enter your email first, then check users_data.csv to update the password manually for now."
-            )
-            return
-
-        user = find_user_by_email(email)
-        if user is None:
-            QMessageBox.information(
-                self,
-                "Forgot Password",
-                "This email is not registered yet. Please create an account first."
-            )
-        else:
-            QMessageBox.information(
-                self,
-                "Forgot Password",
-                f"Account found for {email}. For now, update the password manually inside users_data.csv."
-            )
+        QMessageBox.information(
+            self, "Reset Password",
+            "Password reset via email is coming soon.\n\n"
+            "If you need urgent access, please contact support."
+        )
 
     def handle_login(self, email, password):
         user = find_user_by_email(email)
 
         if user is None:
             QMessageBox.information(
-                self,
-                "Not Registered",
-                "This email is not registered. Please register first."
+                self, "Not Registered",
+                "This email is not registered. Please create an account first."
             )
             self.set_register_mode()
             return
 
         if user["password"] != password:
-            QMessageBox.warning(self, "Login Failed", "Incorrect password.")
+            QMessageBox.warning(self, "Login Failed", "Incorrect email or password.")
             return
 
         if self.remember_check.isChecked():
             save_session(user)
 
-        QMessageBox.information(
-            self,
-            "Login Successful",
-            f"Welcome back, {user['full_name']}!"
-        )
         self.show_role_window(user)
 
-    def handle_register(self, name, email, phone, password):
+    def handle_register(self, name, email, phone, password, confirm, role_text):
+        if len(password) < 8:
+            QMessageBox.warning(self, "Error", "Password must be at least 8 characters.")
+            return
+
+        if password != confirm:
+            QMessageBox.warning(self, "Error", "Passwords do not match.")
+            return
+
         if not email.endswith(".com"):
-            QMessageBox.warning(self, "Error", "Email must end with .com")
+            QMessageBox.warning(self, "Error", "Please enter a valid email address.")
             return
 
         if not phone.startswith("+20"):
-            QMessageBox.warning(self, "Error", "Phone number must start with +20")
+            QMessageBox.warning(self, "Error", "Phone number must start with +20.")
             return
 
         number_part = phone[3:]
         if not number_part.isdigit() or len(number_part) != 10:
             QMessageBox.warning(
-                self,
-                "Error",
-                "Phone must be +20 followed by exactly 10 digits"
+                self, "Error", "Phone must be +20 followed by exactly 10 digits."
             )
             return
 
-        existing_user = find_user_by_email(email)
-        if existing_user is not None:
+        if find_user_by_email(email) is not None:
             QMessageBox.warning(
-                self,
-                "Already Registered",
-                "This email already exists. Please log in instead."
+                self, "Already Registered",
+                "An account with this email already exists. Please sign in."
             )
             self.set_login_mode()
             return
 
-        users = load_users()
-        for user in users:
-            if user["password"] == password:
-                QMessageBox.warning(
-                    self,
-                    "Error",
-                    "This password is already used. Choose another one."
-                )
-                return
-
+        role = "Restaurant" if role_text == "Restaurant Owner" else "User"
         new_user = {
             "full_name": name,
             "email": email,
             "phone": phone,
             "password": password,
-            "role": "User",
+            "role": role,
         }
 
         append_user(new_user)
-        QMessageBox.information(
-            self,
-            "Registration Successful",
-            "Account created successfully. You can now use your new account."
-        )
         self.show_role_window(new_user)
 
     def handle_submit(self):
@@ -963,22 +1238,20 @@ class AuthWindow(QMainWindow):
 
         if self.is_login:
             if not email or not password:
-                QMessageBox.warning(self, "Error", "Please fill in email and password.")
+                QMessageBox.warning(self, "Error", "Please enter your email and password.")
                 return
             self.handle_login(email, password)
         else:
-            name = self.name_input.text().strip()
-            phone = self.phone_input.text().strip()
+            name    = self.name_input.text().strip()
+            phone   = self.phone_input.text().strip()
+            confirm = self.confirm_input.text().strip()
+            role    = self.role_combo.currentText()
 
-            if not name or not email or not phone or not password:
-                QMessageBox.warning(
-                    self,
-                    "Error",
-                    "Please fill in all registration fields."
-                )
+            if not name or not email or not phone or not password or not confirm:
+                QMessageBox.warning(self, "Error", "Please fill in all fields.")
                 return
 
-            self.handle_register(name, email, phone, password)
+            self.handle_register(name, email, phone, password, confirm, role)
 
 
 def center_window(window):
@@ -1001,18 +1274,11 @@ def main():
 
     ensure_csv_exists()
 
-    # --- ADD THIS START ---
-    # This repairs your orders_data.csv header without deleting your data
     if os.path.exists(ORDERS_CSV):
         with open(ORDERS_CSV, 'r', encoding='utf-8') as f:
             first_line = f.readline()
-
-        # If the new 'restaurant_name' column is missing from the first line
         if "restaurant_name" not in first_line:
-            # We call your update function with a fake ID.
-            # This triggers a full load and a full write using the 12-column headers.
             update_order_status_csv("REPAIR_HEADER_ONLY", "")
-    # --- ADD THIS END ---
 
     splash = SplashScreen()
     auth_window = AuthWindow()
