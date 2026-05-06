@@ -2,7 +2,8 @@ import csv
 import json
 import os
 import sys
-from PyQt5.QtCore import Qt, QTimer
+from datetime import datetime
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QMainWindow, QLabel, QPushButton,
@@ -21,9 +22,27 @@ ORDERS_CSV = "orders_data.csv"
 ORDERS_HEADERS = [
     "order_id", "restaurant_id", "restaurant_name",
     "user_email", "items", "subtotal", "delivery_fee",
-    "total", "address", "payment_method", "status", "timestamp"
+    "total", "address", "payment_method", "status", "timestamp", "updated_at"
 ]
 SESSION_PATH = "session.json"
+
+ORDER_STATUS_STYLES = {
+    "Pending": ("#f59e0b", "#fffbeb"),
+    "Accepted": ("#10b981", "#ecfdf5"),
+    "Preparing": ("#3b82f6", "#eff6ff"),
+    "Ready for Pickup": ("#8b5cf6", "#f5f3ff"),
+    "Rejected": ("#ef4444", "#fef2f2"),
+}
+
+VALID_STATUS_TRANSITIONS = {
+    "Pending": {"Accepted", "Rejected"},
+    "Accepted": {"Preparing"},
+    "Preparing": {"Ready for Pickup"},
+}
+
+
+def current_timestamp():
+    return datetime.now().isoformat(timespec="seconds")
 
 DUMMY_USERS = [
     {
@@ -51,13 +70,11 @@ DUMMY_USERS = [
 
 
 def ensure_csv_exists():
-    if os.path.exists(CSV_PATH):
-        return
-
-    with open(CSV_PATH, "w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=CSV_HEADERS)
-        writer.writeheader()
-        writer.writerows(DUMMY_USERS)
+    if not os.path.exists(CSV_PATH):
+        with open(CSV_PATH, "w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=CSV_HEADERS)
+            writer.writeheader()
+            writer.writerows(DUMMY_USERS)
 
     if not os.path.exists(ORDERS_CSV):
         with open(ORDERS_CSV, "w", newline="", encoding="utf-8") as file:
@@ -124,48 +141,241 @@ def clear_session():
 
 
 def load_orders():
+    ensure_csv_exists()
     orders = []
     if not os.path.exists(ORDERS_CSV):
         return orders
+
     with open(ORDERS_CSV, "r", newline="", encoding="utf-8") as file:
         reader = csv.reader(file)
-        headers = next(reader, None)  # Skip the header
-        for row in reader:
-            if not row: continue
+        next(reader, None)  # Skip header row
 
-            # If it's the old 4-column format
+        for row in reader:
+            if not row:
+                continue
+
+            # Legacy Sprint 1 rows had only: order_id, restaurant_id, items, status
             if len(row) == 4:
                 order_dict = {
                     "order_id": row[0],
                     "restaurant_id": row[1],
-                    "items": row[2],
-                    "status": row[3],
                     "restaurant_name": "Legacy Restaurant",
-                    "user_email": "N/A", "subtotal": "0", "delivery_fee": "0",
-                    "total": "0", "address": "N/A", "payment_method": "N/A", "timestamp": "N/A"
+                    "user_email": "N/A",
+                    "items": row[2],
+                    "subtotal": "0",
+                    "delivery_fee": "0",
+                    "total": "0",
+                    "address": "N/A",
+                    "payment_method": "N/A",
+                    "status": row[3],
+                    "timestamp": "N/A",
+                    "updated_at": "N/A",
                 }
-            # If it's the new 12-column format
             else:
                 order_dict = {}
-                for i, h in enumerate(ORDERS_HEADERS):
-                    # Fill with "N/A" if the row is unexpectedly short
-                    order_dict[h] = row[i] if i < len(row) else "N/A"
+                for i, header in enumerate(ORDERS_HEADERS):
+                    order_dict[header] = row[i].strip() if i < len(row) else ""
 
+                if not order_dict.get("updated_at"):
+                    order_dict["updated_at"] = order_dict.get("timestamp", "N/A") or "N/A"
+
+            order_dict["status"] = order_dict.get("status", "Pending").strip() or "Pending"
             orders.append(order_dict)
+
     return orders
+
+
+def get_order_by_id(order_id):
+    for order in load_orders():
+        if order.get("order_id") == str(order_id):
+            return order
+    return None
 
 
 def update_order_status_csv(order_id, new_status):
     orders = load_orders()
+    found = False
+
     for order in orders:
-        if order["order_id"] == str(order_id):
+        if order.get("order_id") == str(order_id):
             order["status"] = new_status
+            order["updated_at"] = current_timestamp()
+            found = True
+            break
+
+    if not found:
+        return False
 
     with open(ORDERS_CSV, "w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=ORDERS_HEADERS)
+        writer = csv.DictWriter(file, fieldnames=ORDERS_HEADERS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(orders)
 
+    return True
+
+
+
+class CustomerOrdersWidget(QWidget):
+    """Customer order tracking page. Refreshes CSV data periodically."""
+    go_back = pyqtSignal()
+
+    def __init__(self, user_data):
+        super().__init__()
+        self.user_data = user_data
+        self._build_ui()
+
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.timeout.connect(self.refresh_orders)
+        self._refresh_timer.start(3000)
+        self.refresh_orders()
+
+    def _build_ui(self):
+        self.setStyleSheet("background: #f9fafb;")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        header = QFrame()
+        header.setFixedHeight(64)
+        header.setStyleSheet("background: #ffffff; border-bottom: 1px solid #e5e7eb;")
+        h = QHBoxLayout(header)
+        h.setContentsMargins(24, 0, 24, 0)
+
+        back_btn = QPushButton("← Dashboard")
+        back_btn.setFixedHeight(36)
+        back_btn.setStyleSheet("""
+            QPushButton { background: #f3f4f6; color: #374151; border: none;
+                border-radius: 8px; padding: 0 14px; font-size: 13px; font-weight: 600; }
+            QPushButton:hover { background: #e5e7eb; }
+        """)
+        back_btn.clicked.connect(self.go_back.emit)
+
+        title = QLabel("Track My Orders")
+        title.setFont(QFont("Arial", 16, QFont.Bold))
+        title.setStyleSheet("color: #111827;")
+
+        refresh_btn = QPushButton("↻ Refresh")
+        refresh_btn.setFixedHeight(36)
+        refresh_btn.setStyleSheet("""
+            QPushButton { background: #f0b100; color: white; border: none;
+                border-radius: 8px; padding: 0 16px; font-size: 13px; font-weight: 600; }
+            QPushButton:hover { background: #d99f00; }
+        """)
+        refresh_btn.clicked.connect(self.refresh_orders)
+
+        h.addWidget(back_btn)
+        h.addSpacing(12)
+        h.addWidget(title)
+        h.addStretch()
+        h.addWidget(refresh_btn)
+        root.addWidget(header)
+
+        info = QLabel("Order statuses refresh automatically every 3 seconds.")
+        info.setStyleSheet(
+            "background: #fffbeb; color: #92400e; border-bottom: 1px solid #fde68a;"
+            " padding: 10px 24px; font-size: 12px;"
+        )
+        root.addWidget(info)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: #f9fafb; }")
+
+        self._orders_widget = QWidget()
+        self._orders_widget.setStyleSheet("background: #f9fafb;")
+        self._orders_layout = QVBoxLayout(self._orders_widget)
+        self._orders_layout.setContentsMargins(32, 24, 32, 24)
+        self._orders_layout.setSpacing(12)
+        self._orders_layout.addStretch()
+
+        scroll.setWidget(self._orders_widget)
+        root.addWidget(scroll, stretch=1)
+
+    def refresh_orders(self):
+        while self._orders_layout.count() > 1:
+            item = self._orders_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        email = self.user_data.get("email", "").strip().lower()
+        orders = [
+            order for order in load_orders()
+            if order.get("user_email", "").strip().lower() == email
+        ]
+        orders.reverse()
+
+        if not orders:
+            empty = QLabel("You do not have any orders yet.")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setStyleSheet(
+                "color: #9ca3af; font-size: 15px; padding: 60px; background: transparent;"
+            )
+            self._orders_layout.insertWidget(0, empty)
+            return
+
+        for i, order in enumerate(orders):
+            self._orders_layout.insertWidget(i, self._build_order_card(order))
+
+    def _build_order_card(self, order):
+        status = order.get("status", "Pending")
+        fg, bg = ORDER_STATUS_STYLES.get(status, ("#6b7280", "#f9fafb"))
+
+        card = QFrame()
+        card.setStyleSheet(
+            "QFrame { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; }"
+        )
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(24, 18, 24, 18)
+        layout.setSpacing(12)
+
+        top = QHBoxLayout()
+        title = QLabel(f"Order #{order.get('order_id', 'N/A')}")
+        title.setFont(QFont("Arial", 14, QFont.Bold))
+        title.setStyleSheet("color: #111827; background: transparent;")
+
+        badge = QLabel(f"  {status}  ")
+        badge.setFixedHeight(26)
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setStyleSheet(
+            f"color: {fg}; background: {bg}; border: 1px solid {fg}55;"
+            " border-radius: 6px; font-size: 12px; font-weight: 700;"
+        )
+
+        top.addWidget(title)
+        top.addStretch()
+        top.addWidget(badge)
+        layout.addLayout(top)
+
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background: #f3f4f6;")
+        layout.addWidget(sep)
+
+        details = QVBoxLayout()
+        details.setSpacing(6)
+
+        restaurant = QLabel(f"🏪  {order.get('restaurant_name', 'N/A')}")
+        restaurant.setStyleSheet("color: #374151; font-size: 13px; background: transparent;")
+
+        items = QLabel(f"🍽  {order.get('items', 'N/A')}")
+        items.setWordWrap(True)
+        items.setStyleSheet("color: #374151; font-size: 13px; background: transparent;")
+
+        total = QLabel(f"💰  Total: EGP {order.get('total', '—')}")
+        total.setStyleSheet("color: #111827; font-size: 13px; font-weight: 700; background: transparent;")
+
+        updated = QLabel(f"Last update: {order.get('updated_at') or order.get('timestamp', 'N/A')}")
+        updated.setStyleSheet("color: #9ca3af; font-size: 11px; background: transparent;")
+
+        details.addWidget(restaurant)
+        details.addWidget(items)
+        details.addWidget(total)
+        details.addWidget(updated)
+        layout.addLayout(details)
+
+        return card
 
 
 class SplashScreen(QWidget):
@@ -361,8 +571,42 @@ class RoleWindow(QMainWindow):
             cl.addWidget(lbl_soon)
             return card
 
-        cart_card   = _placeholder_card("🛒", "My Cart & Checkout", "Sprint 2")
-        orders_card = _placeholder_card("📦", "Track My Orders",    "Sprint 2")
+        cart_card = _placeholder_card("🛒", "My Cart & Checkout", "Sprint 2")
+
+        orders_card = QFrame()
+        orders_card.setStyleSheet(
+            "QFrame { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; }"
+        )
+        orders_card.setFixedHeight(CARD_H)
+        oc_layout = QVBoxLayout(orders_card)
+        oc_layout.setContentsMargins(*CARD_MARGINS)
+        oc_layout.setSpacing(6)
+
+        oc_icon = QLabel("📦")
+        oc_icon.setFont(QFont("Arial", ICON_SIZE))
+        oc_icon.setStyleSheet("background: transparent;")
+
+        oc_title = QLabel("Track My Orders")
+        oc_title.setFont(QFont("Arial", TITLE_SIZE, QFont.Bold))
+        oc_title.setWordWrap(True)
+        oc_title.setStyleSheet("color: #374151; background: transparent;")
+
+        oc_btn = QPushButton("Open →")
+        oc_btn.setFixedHeight(32)
+        oc_btn.setStyleSheet("""
+            QPushButton {
+                background: #f0b100; color: white; border: none;
+                border-radius: 8px; font-size: 12px; font-weight: 700;
+            }
+            QPushButton:hover { background: #d99f00; }
+        """)
+        oc_btn.clicked.connect(self._open_order_tracking)
+
+        oc_layout.addWidget(oc_icon)
+        oc_layout.addWidget(oc_title)
+        oc_layout.addStretch()
+        oc_layout.addWidget(oc_btn)
+
         reviews_card = _placeholder_card("⭐", "Ratings & Reviews", "Sprint 3")
 
         cards_layout.addWidget(nearby_card)
@@ -394,6 +638,11 @@ class RoleWindow(QMainWindow):
         self.cart_widget.go_back_to_restaurant.connect(lambda: self.stack.setCurrentIndex(2))
         self.stack.addWidget(self.cart_widget)  # index 3
 
+        # Customer order tracking widget (index 4)
+        self.orders_widget = CustomerOrdersWidget(self.user_data)
+        self.orders_widget.go_back.connect(lambda: self.stack.setCurrentIndex(0))
+        self.stack.addWidget(self.orders_widget)  # index 4
+
         # Connect restaurant details "Order Now" -> cart
         self.restaurant_details_widget.order_now.connect(self._open_cart)
 
@@ -416,6 +665,10 @@ class RoleWindow(QMainWindow):
     def _open_cart(self, restaurant):
         self.cart_widget.load_restaurant(restaurant)
         self.stack.setCurrentIndex(3)
+
+    def _open_order_tracking(self):
+        self.orders_widget.refresh_orders()
+        self.stack.setCurrentIndex(4)
 
 class RestaurantDashboard(QMainWindow):
     def __init__(self, user_data):
@@ -545,10 +798,11 @@ class RestaurantDashboard(QMainWindow):
 
         self.pending_stat   = self._stat_card("⏳ Pending",      "0", "#f59e0b")
         self.accepted_stat  = self._stat_card("✅ Accepted",     "0", "#10b981")
-        self.rejected_stat  = self._stat_card("✗  Rejected",     "0", "#ef4444")
-        self.total_stat     = self._stat_card("📦 Total Orders", "0", "#6366f1")
+        self.preparing_stat = self._stat_card("👨‍🍳 Preparing",   "0", "#3b82f6")
+        self.ready_stat     = self._stat_card("📦 Ready",        "0", "#8b5cf6")
+        self.total_stat     = self._stat_card("Total",          "0", "#6366f1")
 
-        for w in (self.pending_stat, self.accepted_stat, self.rejected_stat, self.total_stat):
+        for w in (self.pending_stat, self.accepted_stat, self.preparing_stat, self.ready_stat, self.total_stat):
             stats_row.addWidget(w)
         stats_row.addStretch()
         main_layout.addWidget(stats_bar)
@@ -561,7 +815,7 @@ class RestaurantDashboard(QMainWindow):
         filter_row.setContentsMargins(32, 0, 32, 0)
         filter_row.setSpacing(4)
 
-        for label in ("All", "Pending", "Accepted", "Rejected"):
+        for label in ("All", "Pending", "Accepted", "Preparing", "Ready for Pickup", "Rejected"):
             btn = QPushButton(label)
             btn.setFixedHeight(36)
             btn.clicked.connect(lambda _checked, l=label: self._set_filter(l))
@@ -594,7 +848,7 @@ class RestaurantDashboard(QMainWindow):
 
     def _stat_card(self, label, value, color):
         frame = QFrame()
-        frame.setFixedSize(170, 60)
+        frame.setFixedSize(140, 60)
         frame.setStyleSheet(f"""
             QFrame {{
                 background: {color}11;
@@ -659,14 +913,16 @@ class RestaurantDashboard(QMainWindow):
 
         all_orders = load_orders()
 
-        pending  = sum(1 for o in all_orders if o["status"] == "Pending")
-        accepted = sum(1 for o in all_orders if o["status"] == "Accepted")
-        rejected = sum(1 for o in all_orders if o["status"] == "Rejected")
+        pending   = sum(1 for o in all_orders if o["status"] == "Pending")
+        accepted  = sum(1 for o in all_orders if o["status"] == "Accepted")
+        preparing = sum(1 for o in all_orders if o["status"] == "Preparing")
+        ready     = sum(1 for o in all_orders if o["status"] == "Ready for Pickup")
 
-        self._update_stat(self.pending_stat,  pending)
-        self._update_stat(self.accepted_stat, accepted)
-        self._update_stat(self.rejected_stat, rejected)
-        self._update_stat(self.total_stat,    len(all_orders))
+        self._update_stat(self.pending_stat,   pending)
+        self._update_stat(self.accepted_stat,  accepted)
+        self._update_stat(self.preparing_stat, preparing)
+        self._update_stat(self.ready_stat,     ready)
+        self._update_stat(self.total_stat,     len(all_orders))
 
         if self._active_filter != "All":
             orders = [o for o in all_orders if o["status"] == self._active_filter]
@@ -689,12 +945,7 @@ class RestaurantDashboard(QMainWindow):
 
     def _build_order_card(self, order):
         status = order.get("status", "Pending")
-        STATUS_STYLE = {
-            "Pending":  ("#f59e0b", "#fffbeb"),
-            "Accepted": ("#10b981", "#ecfdf5"),
-            "Rejected": ("#ef4444", "#fef2f2"),
-        }
-        fg, bg = STATUS_STYLE.get(status, ("#6b7280", "#f9fafb"))
+        fg, bg = ORDER_STATUS_STYLES.get(status, ("#6b7280", "#f9fafb"))
 
         card = QFrame()
         card.setStyleSheet("""
@@ -788,11 +1039,11 @@ class RestaurantDashboard(QMainWindow):
         details.addLayout(right)
         layout.addLayout(details)
 
-        # — Action buttons (pending only) —
-        if status == "Pending":
-            btn_row = QHBoxLayout()
-            btn_row.addStretch()
+        # — Action buttons based on the current preparation stage —
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
 
+        if status == "Pending":
             reject_btn = QPushButton("✗  Reject Order")
             reject_btn.setFixedHeight(40)
             reject_btn.setMinimumWidth(140)
@@ -822,10 +1073,62 @@ class RestaurantDashboard(QMainWindow):
             btn_row.addWidget(accept_btn)
             layout.addLayout(btn_row)
 
+        elif status == "Accepted":
+            preparing_btn = QPushButton("👨‍🍳  Mark as Preparing")
+            preparing_btn.setFixedHeight(40)
+            preparing_btn.setMinimumWidth(180)
+            preparing_btn.setStyleSheet("""
+                QPushButton { background: #3b82f6; color: white; border: none;
+                    border-radius: 8px; font-size: 13px; font-weight: 600; padding: 0 16px; }
+                QPushButton:hover { background: #2563eb; }
+            """)
+            preparing_btn.clicked.connect(
+                lambda _ch, oid=order["order_id"]: self.handle_action(oid, "Preparing")
+            )
+            btn_row.addWidget(preparing_btn)
+            layout.addLayout(btn_row)
+
+        elif status == "Preparing":
+            ready_btn = QPushButton("📦  Mark as Ready for Pickup")
+            ready_btn.setFixedHeight(40)
+            ready_btn.setMinimumWidth(220)
+            ready_btn.setStyleSheet("""
+                QPushButton { background: #8b5cf6; color: white; border: none;
+                    border-radius: 8px; font-size: 13px; font-weight: 600; padding: 0 16px; }
+                QPushButton:hover { background: #7c3aed; }
+            """)
+            ready_btn.clicked.connect(
+                lambda _ch, oid=order["order_id"]: self.handle_action(oid, "Ready for Pickup")
+            )
+            btn_row.addWidget(ready_btn)
+            layout.addLayout(btn_row)
+
         return card
 
     def handle_action(self, order_id, status):
-        update_order_status_csv(order_id, status)
+        order = get_order_by_id(order_id)
+        if order is None:
+            QMessageBox.warning(self, "Order Not Found", "This order could not be found.")
+            self.refresh_orders()
+            return
+
+        current_status = order.get("status", "Pending")
+        allowed_next_statuses = VALID_STATUS_TRANSITIONS.get(current_status, set())
+
+        if status not in allowed_next_statuses:
+            QMessageBox.warning(
+                self,
+                "Invalid Status Update",
+                f"Cannot change order from '{current_status}' to '{status}'."
+            )
+            self.refresh_orders()
+            return
+
+        if update_order_status_csv(order_id, status):
+            QMessageBox.information(self, "Status Updated", f"Order is now '{status}'.")
+        else:
+            QMessageBox.warning(self, "Update Failed", "Could not update this order.")
+
         self.refresh_orders()
 
 
@@ -1273,12 +1576,6 @@ def main():
         sys.exit(1)
 
     ensure_csv_exists()
-
-    if os.path.exists(ORDERS_CSV):
-        with open(ORDERS_CSV, 'r', encoding='utf-8') as f:
-            first_line = f.readline()
-        if "restaurant_name" not in first_line:
-            update_order_status_csv("REPAIR_HEADER_ONLY", "")
 
     splash = SplashScreen()
     auth_window = AuthWindow()

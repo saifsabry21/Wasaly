@@ -14,9 +14,10 @@
   <component name="ChangeListManager">
     <list default="true" id="c3abb831-6770-457d-b345-c4b2ffb61548" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cart_order.py" beforeDir="false" afterPath="$PROJECT_DIR$/cart_order.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/orders_data.csv" beforeDir="false" afterPath="$PROJECT_DIR$/orders_data.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/session.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/users_data.csv" beforeDir="false" afterPath="$PROJECT_DIR$/users_data.csv" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -64,6 +65,7 @@
     &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Projects/Wasaly&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,

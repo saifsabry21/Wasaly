@@ -22,17 +22,53 @@ ORDERS_CSV = "orders_data.csv"
 _ORDER_FIELDNAMES = [
     "order_id", "restaurant_id", "restaurant_name",
     "user_email", "items", "subtotal", "delivery_fee",
-    "total", "address", "payment_method", "status", "timestamp",
+    "total", "address", "payment_method", "status", "timestamp", "updated_at",
 ]
 
 
-def _save_order(order: dict):
-    file_exists = os.path.exists(ORDERS_CSV)
-    with open(ORDERS_CSV, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=_ORDER_FIELDNAMES,
-                                extrasaction="ignore")
-        if not file_exists:
+def _ensure_orders_csv_schema():
+    if not os.path.exists(ORDERS_CSV):
+        with open(ORDERS_CSV, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=_ORDER_FIELDNAMES)
             writer.writeheader()
+        return
+
+    with open(ORDERS_CSV, "r", newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        rows = list(reader)
+
+    if not rows:
+        with open(ORDERS_CSV, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=_ORDER_FIELDNAMES)
+            writer.writeheader()
+        return
+
+    if rows[0] == _ORDER_FIELDNAMES:
+        return
+
+    old_header = rows[0]
+    migrated = []
+    for row in rows[1:]:
+        if not row:
+            continue
+        order = {field: "" for field in _ORDER_FIELDNAMES}
+        for i, field in enumerate(old_header):
+            if field in order and i < len(row):
+                order[field] = row[i]
+        if not order.get("updated_at"):
+            order["updated_at"] = order.get("timestamp", "")
+        migrated.append(order)
+
+    with open(ORDERS_CSV, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_ORDER_FIELDNAMES, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(migrated)
+
+
+def _save_order(order: dict):
+    _ensure_orders_csv_schema()
+    with open(ORDERS_CSV, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_ORDER_FIELDNAMES, extrasaction="ignore")
         writer.writerow(order)
 
 
@@ -822,6 +858,7 @@ class CartOrderWidget(QWidget):
         if notes:
             address += f" — {notes}"
 
+        created_at = datetime.now().isoformat(timespec="seconds")
         order = {
             "order_id":        "WAS-" + str(uuid.uuid4())[:8].upper(),
             "restaurant_id":   self.restaurant["id"],
@@ -834,7 +871,8 @@ class CartOrderWidget(QWidget):
             "address":         address,
             "payment_method":  pay,
             "status":          "Pending",
-            "timestamp":       datetime.now().isoformat(timespec="seconds"),
+            "timestamp":       created_at,
+            "updated_at":      created_at,
         }
         _save_order(order)
         self._populate_success(order)
