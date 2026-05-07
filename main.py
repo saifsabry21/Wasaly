@@ -14,6 +14,8 @@ from nearby_restaurants import NearbyRestaurantsWidget
 from restaurant_details import RestaurantDetailsWidget
 from cart_order import CartOrderWidget
 from restaurant_data import get_menu_for_restaurant, set_item_availability
+from complaint_widget import ReportIssueWidget
+from admin_complaints import AdminComplaintsWidget
 
 SPLASH_PATH = "splashscreen.png"
 SIDE_IMAGE_PATH = "sidescreen.png"
@@ -656,9 +658,45 @@ class RoleWindow(QMainWindow):
 
         reviews_card = _placeholder_card("⭐", "Ratings & Reviews", "Sprint 3")
 
+        # ── Report Issue card ──
+        issue_card = QFrame()
+        issue_card.setStyleSheet(
+            "QFrame { background: #ffffff; border: 1px solid #fca5a5; border-radius: 14px; }"
+        )
+        issue_card.setFixedHeight(CARD_H)
+        ic_layout = QVBoxLayout(issue_card)
+        ic_layout.setContentsMargins(*CARD_MARGINS)
+        ic_layout.setSpacing(6)
+
+        ic_icon = QLabel("🚨")
+        ic_icon.setFont(QFont("Arial", ICON_SIZE))
+        ic_icon.setStyleSheet("background: transparent;")
+
+        ic_title = QLabel("Report an Issue")
+        ic_title.setFont(QFont("Arial", TITLE_SIZE, QFont.Bold))
+        ic_title.setWordWrap(True)
+        ic_title.setStyleSheet("color: #374151; background: transparent;")
+
+        ic_btn = QPushButton("Open →")
+        ic_btn.setFixedHeight(32)
+        ic_btn.setStyleSheet("""
+            QPushButton {
+                background: #ef4444; color: white; border: none;
+                border-radius: 8px; font-size: 12px; font-weight: 700;
+            }
+            QPushButton:hover { background: #dc2626; }
+        """)
+        ic_btn.clicked.connect(self._open_report_issue)
+
+        ic_layout.addWidget(ic_icon)
+        ic_layout.addWidget(ic_title)
+        ic_layout.addStretch()
+        ic_layout.addWidget(ic_btn)
+
         cards_layout.addWidget(nearby_card)
         cards_layout.addWidget(cart_card)
         cards_layout.addWidget(orders_card)
+        cards_layout.addWidget(issue_card)
         cards_layout.addWidget(reviews_card)
 
         body_layout.addLayout(cards_layout)
@@ -690,6 +728,16 @@ class RoleWindow(QMainWindow):
         self.orders_widget.go_back.connect(lambda: self.stack.setCurrentIndex(0))
         self.stack.addWidget(self.orders_widget)  # index 4
 
+        # Report Issue widget (index 5)
+        user_orders = [
+            o for o in load_orders()
+            if o.get("user_email", "").strip().lower() ==
+               self.user_data.get("email", "").strip().lower()
+        ]
+        self.report_issue_widget = ReportIssueWidget(self.user_data, user_orders)
+        self.report_issue_widget.go_back.connect(lambda: self.stack.setCurrentIndex(0))
+        self.stack.addWidget(self.report_issue_widget)  # index 5
+
         # Connect restaurant details "Order Now" -> cart
         self.restaurant_details_widget.order_now.connect(self._open_cart)
 
@@ -716,6 +764,18 @@ class RoleWindow(QMainWindow):
     def _open_order_tracking(self):
         self.orders_widget.refresh_orders()
         self.stack.setCurrentIndex(4)
+
+    def _open_report_issue(self):
+        # Refresh the user's orders list each time the page is opened
+        user_orders = [
+            o for o in load_orders()
+            if o.get("user_email", "").strip().lower() ==
+               self.user_data.get("email", "").strip().lower()
+        ]
+        self.report_issue_widget.orders = user_orders
+        self.report_issue_widget._populate_orders()
+        self.report_issue_widget.refresh_past_complaints()
+        self.stack.setCurrentIndex(5)
 
 class MenuAvailabilityDialog(QDialog):
     """Restaurant-side dialog for toggling item availability."""
@@ -1434,6 +1494,190 @@ class RestaurantDashboard(QMainWindow):
         self.refresh_orders()
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# Admin Dashboard
+# ═════════════════════════════════════════════════════════════════════════════
+class AdminDashboard(QMainWindow):
+    """Wasaly admin portal: complaints management (and future admin tools)."""
+
+    def __init__(self, user_data):
+        super().__init__()
+        self.user_data = user_data
+        name = user_data.get("full_name", "Admin")
+
+        self.setWindowTitle("Wasaly — Admin Portal")
+        self.resize(1100, 720)
+        self.setStyleSheet("background: #f9fafb;")
+
+        central = QWidget()
+        self.setCentralWidget(central)
+
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ── Sidebar ───────────────────────────────────────────────────────────
+        sidebar = QFrame()
+        sidebar.setFixedWidth(240)
+        sidebar.setStyleSheet("QFrame { background: #111827; }")
+        sb = QVBoxLayout(sidebar)
+        sb.setContentsMargins(24, 32, 24, 32)
+        sb.setSpacing(0)
+
+        logo_lbl = QLabel("Wasaly")
+        logo_lbl.setFont(QFont("Arial", 22, QFont.Bold))
+        logo_lbl.setStyleSheet("color: #f0b100; background: transparent;")
+        sb.addWidget(logo_lbl)
+
+        portal_lbl = QLabel("Admin Portal")
+        portal_lbl.setStyleSheet("color: #6b7280; font-size: 12px; background: transparent;")
+        sb.addWidget(portal_lbl)
+        sb.addSpacing(32)
+
+        avatar_lbl = QLabel(name[0].upper() if name else "A")
+        avatar_lbl.setFixedSize(56, 56)
+        avatar_lbl.setAlignment(Qt.AlignCenter)
+        avatar_lbl.setStyleSheet(
+            "background: #6366f1; color: white; border-radius: 28px;"
+            " font-size: 22px; font-weight: bold;"
+        )
+        sb.addWidget(avatar_lbl, alignment=Qt.AlignLeft)
+        sb.addSpacing(12)
+
+        name_lbl = QLabel(name)
+        name_lbl.setFont(QFont("Arial", 14, QFont.Bold))
+        name_lbl.setStyleSheet("color: #f9fafb; background: transparent;")
+        name_lbl.setWordWrap(True)
+        sb.addWidget(name_lbl)
+
+        email_lbl = QLabel(user_data.get("email", ""))
+        email_lbl.setStyleSheet("color: #9ca3af; font-size: 11px; background: transparent;")
+        email_lbl.setWordWrap(True)
+        sb.addWidget(email_lbl)
+        sb.addSpacing(8)
+
+        role_badge = QLabel("🛡  Wasaly Admin")
+        role_badge.setStyleSheet("color: #6366f1; font-size: 11px; font-weight: 700; background: transparent;")
+        sb.addWidget(role_badge)
+        sb.addSpacing(24)
+
+        div = QFrame()
+        div.setFixedHeight(1)
+        div.setStyleSheet("background: #374151;")
+        sb.addWidget(div)
+        sb.addSpacing(20)
+
+        # Sidebar nav buttons
+        def _nav_btn(icon, label, on_click):
+            btn = QPushButton(f"{icon}  {label}")
+            btn.setFixedHeight(42)
+            btn.setStyleSheet("""
+                QPushButton { background: #1f2937; color: #d1d5db; border: none;
+                    border-radius: 8px; text-align: left; padding: 0 14px;
+                    font-size: 13px; font-weight: 600; }
+                QPushButton:hover { background: #374151; color: white; }
+            """)
+            btn.clicked.connect(on_click)
+            return btn
+
+        sb.addWidget(_nav_btn("🎫", "Complaints", lambda: self.stack.setCurrentIndex(1)))
+        sb.addSpacing(6)
+        sb.addWidget(_nav_btn("🏠", "Dashboard",  lambda: self.stack.setCurrentIndex(0)))
+        sb.addStretch()
+
+        logout_btn = QPushButton("Sign Out")
+        logout_btn.setFixedHeight(40)
+        logout_btn.setStyleSheet("""
+            QPushButton { background: #1f2937; color: #9ca3af; border: 1px solid #374151;
+                border-radius: 8px; font-size: 13px; font-weight: 600; }
+            QPushButton:hover { background: #374151; color: white; }
+        """)
+        logout_btn.clicked.connect(self._logout)
+        sb.addWidget(logout_btn)
+
+        root.addWidget(sidebar)
+
+        # ── Stacked main area ─────────────────────────────────────────────────
+        self.stack = QStackedWidget()
+
+        # Index 0: Admin home
+        home_page = self._build_home_page(name)
+        self.stack.addWidget(home_page)   # 0
+
+        # Index 1: Complaints
+        self.complaints_widget = AdminComplaintsWidget(user_data)
+        self.complaints_widget.go_back.connect(lambda: self.stack.setCurrentIndex(0))
+        self.stack.addWidget(self.complaints_widget)  # 1
+
+        root.addWidget(self.stack, stretch=1)
+
+    def _build_home_page(self, name):
+        page = QWidget()
+        page.setStyleSheet("background: #f9fafb;")
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(40, 40, 40, 40)
+        lay.setSpacing(20)
+
+        welcome = QLabel(f"Welcome, {name.split()[0]}! 🛡")
+        welcome.setFont(QFont("Arial", 24, QFont.Bold))
+        welcome.setStyleSheet("color: #111827;")
+
+        subtitle = QLabel("Wasaly Admin Portal — manage complaints and platform health.")
+        subtitle.setStyleSheet("color: #6b7280; font-size: 14px;")
+
+        lay.addWidget(welcome)
+        lay.addWidget(subtitle)
+        lay.addSpacing(16)
+
+        # Quick-action card for complaints
+        card = QFrame()
+        card.setFixedHeight(160)
+        card.setStyleSheet(
+            "QFrame { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 16px; }"
+        )
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(24, 20, 24, 20)
+        cl.setSpacing(8)
+
+        icon_lbl = QLabel("🎫")
+        icon_lbl.setFont(QFont("Arial", 20))
+        icon_lbl.setStyleSheet("background: transparent;")
+
+        title_lbl = QLabel("Complaints & Escalations")
+        title_lbl.setFont(QFont("Arial", 14, QFont.Bold))
+        title_lbl.setStyleSheet("color: #111827; background: transparent;")
+
+        desc_lbl = QLabel("View, respond to, and resolve customer complaints.")
+        desc_lbl.setStyleSheet("color: #6b7280; font-size: 13px; background: transparent;")
+
+        open_btn = QPushButton("Open →")
+        open_btn.setFixedHeight(34)
+        open_btn.setFixedWidth(100)
+        open_btn.setStyleSheet("""
+            QPushButton { background: #6366f1; color: white; border: none;
+                border-radius: 8px; font-size: 13px; font-weight: 700; }
+            QPushButton:hover { background: #4f46e5; }
+        """)
+        open_btn.clicked.connect(lambda: self.stack.setCurrentIndex(1))
+
+        cl.addWidget(icon_lbl)
+        cl.addWidget(title_lbl)
+        cl.addWidget(desc_lbl)
+        cl.addStretch()
+        cl.addWidget(open_btn, alignment=Qt.AlignLeft)
+
+        lay.addWidget(card)
+        lay.addStretch()
+        return page
+
+    def _logout(self):
+        clear_session()
+        self.auth_window = AuthWindow()
+        center_window(self.auth_window)
+        self.auth_window.show()
+        self.close()
+
+
 class AuthWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1757,6 +2001,8 @@ class AuthWindow(QMainWindow):
         role = user_data.get("role", "User")
         if role == "Restaurant":
             return RestaurantDashboard(user_data)
+        elif role == "Admin":
+            return AdminDashboard(user_data)
         else:
             return RoleWindow(user_data)
 
