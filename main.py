@@ -8,11 +8,12 @@ from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QMainWindow, QLabel, QPushButton,
     QLineEdit, QHBoxLayout, QVBoxLayout, QFrame, QMessageBox,
-    QCheckBox, QStackedWidget, QComboBox, QScrollArea, QSizePolicy
+    QCheckBox, QStackedWidget, QComboBox, QScrollArea, QSizePolicy, QDialog
 )
 from nearby_restaurants import NearbyRestaurantsWidget
 from restaurant_details import RestaurantDetailsWidget
 from cart_order import CartOrderWidget
+from restaurant_data import get_menu_for_restaurant, set_item_availability
 
 SPLASH_PATH = "splashscreen.png"
 SIDE_IMAGE_PATH = "sidescreen.png"
@@ -25,6 +26,15 @@ ORDERS_HEADERS = [
     "total", "address", "payment_method", "status", "timestamp", "updated_at"
 ]
 SESSION_PATH = "session.json"
+RESTAURANT_OWNERS_CSV = "restaurant_owners.csv"
+RESTAURANT_OWNERS_HEADERS = ["email", "restaurant_id", "restaurant_name"]
+DEFAULT_RESTAURANT_OWNERS = [
+    {
+        "email": "nour.restaurant@example.com",
+        "restaurant_id": "R01",
+        "restaurant_name": "Koshary El Tahrir",
+    }
+]
 
 ORDER_STATUS_STYLES = {
     "Pending": ("#f59e0b", "#fffbeb"),
@@ -80,6 +90,12 @@ def ensure_csv_exists():
         with open(ORDERS_CSV, "w", newline="", encoding="utf-8") as file:
             writer = csv.DictWriter(file, fieldnames=ORDERS_HEADERS)
             writer.writeheader()
+
+    if not os.path.exists(RESTAURANT_OWNERS_CSV):
+        with open(RESTAURANT_OWNERS_CSV, "w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=RESTAURANT_OWNERS_HEADERS)
+            writer.writeheader()
+            writer.writerows(DEFAULT_RESTAURANT_OWNERS)
 
 
 def load_users():
@@ -212,6 +228,37 @@ def update_order_status_csv(order_id, new_status):
         writer.writerows(orders)
 
     return True
+
+
+def load_restaurant_owners():
+    ensure_csv_exists()
+    owners = []
+
+    if not os.path.exists(RESTAURANT_OWNERS_CSV):
+        return owners
+
+    with open(RESTAURANT_OWNERS_CSV, "r", newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            email = row.get("email", "").strip().lower()
+            restaurant_id = row.get("restaurant_id", "").strip()
+            restaurant_name = row.get("restaurant_name", "").strip()
+            if email and restaurant_id:
+                owners.append({
+                    "email": email,
+                    "restaurant_id": restaurant_id,
+                    "restaurant_name": restaurant_name,
+                })
+
+    return owners
+
+
+def get_restaurant_owner_record(email):
+    target = email.strip().lower()
+    for owner in load_restaurant_owners():
+        if owner["email"] == target:
+            return owner
+    return None
 
 
 
@@ -670,11 +717,208 @@ class RoleWindow(QMainWindow):
         self.orders_widget.refresh_orders()
         self.stack.setCurrentIndex(4)
 
+class MenuAvailabilityDialog(QDialog):
+    """Restaurant-side dialog for toggling item availability."""
+
+    def __init__(self, owner_record, user_data, parent=None):
+        super().__init__(parent)
+        self.owner_record = owner_record
+        self.user_data = user_data
+        self.restaurant_id = owner_record["restaurant_id"]
+        self.restaurant_name = owner_record.get("restaurant_name") or self.restaurant_id
+        self.setWindowTitle("Manage Menu Availability")
+        self.resize(820, 620)
+        self.setStyleSheet("background: #f9fafb;")
+        self._build_ui()
+        self.refresh_menu()
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        header = QFrame()
+        header.setFixedHeight(70)
+        header.setStyleSheet("background: #ffffff; border-bottom: 1px solid #e5e7eb;")
+        h = QHBoxLayout(header)
+        h.setContentsMargins(24, 0, 24, 0)
+
+        title_box = QVBoxLayout()
+        title_box.setSpacing(2)
+        title = QLabel("Manage Menu Availability")
+        title.setFont(QFont("Arial", 16, QFont.Bold))
+        title.setStyleSheet("color: #111827; background: transparent;")
+        subtitle = QLabel(f"{self.restaurant_name}  ·  {self.restaurant_id}")
+        subtitle.setStyleSheet("color: #6b7280; font-size: 12px; background: transparent;")
+        title_box.addWidget(title)
+        title_box.addWidget(subtitle)
+
+        refresh_btn = QPushButton("↻ Refresh")
+        refresh_btn.setFixedHeight(36)
+        refresh_btn.setStyleSheet("""
+            QPushButton { background: #f3f4f6; color: #374151; border: none;
+                border-radius: 8px; padding: 0 16px; font-size: 13px; font-weight: 600; }
+            QPushButton:hover { background: #e5e7eb; }
+        """)
+        refresh_btn.clicked.connect(self.refresh_menu)
+
+        close_btn = QPushButton("Close")
+        close_btn.setFixedHeight(36)
+        close_btn.setStyleSheet("""
+            QPushButton { background: #111827; color: white; border: none;
+                border-radius: 8px; padding: 0 16px; font-size: 13px; font-weight: 600; }
+            QPushButton:hover { background: #374151; }
+        """)
+        close_btn.clicked.connect(self.accept)
+
+        h.addLayout(title_box)
+        h.addStretch()
+        h.addWidget(refresh_btn)
+        h.addWidget(close_btn)
+        root.addWidget(header)
+
+        info = QLabel("Toggle item availability here. Customer menus and checkout will use the latest saved status.")
+        info.setStyleSheet(
+            "background: #fffbeb; color: #92400e; border-bottom: 1px solid #fde68a;"
+            " padding: 10px 24px; font-size: 12px;"
+        )
+        root.addWidget(info)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: #f9fafb; }")
+
+        self._content = QWidget()
+        self._content.setStyleSheet("background: #f9fafb;")
+        self._menu_layout = QVBoxLayout(self._content)
+        self._menu_layout.setContentsMargins(24, 18, 24, 24)
+        self._menu_layout.setSpacing(12)
+        self._menu_layout.addStretch()
+
+        scroll.setWidget(self._content)
+        root.addWidget(scroll, stretch=1)
+
+    def refresh_menu(self):
+        while self._menu_layout.count() > 1:
+            item = self._menu_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        menu_data = get_menu_for_restaurant(self.restaurant_id)
+        categories = menu_data.get("categories", {})
+
+        if not categories:
+            empty = QLabel("No menu items found for this restaurant.")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setStyleSheet("color: #9ca3af; font-size: 14px; padding: 60px;")
+            self._menu_layout.insertWidget(0, empty)
+            return
+
+        insert_index = 0
+        for category, items in categories.items():
+            section = QLabel(category.upper())
+            section.setStyleSheet(
+                "color: #9ca3af; font-size: 11px; font-weight: 800;"
+                " letter-spacing: 1px; background: transparent; margin-top: 8px;"
+            )
+            self._menu_layout.insertWidget(insert_index, section)
+            insert_index += 1
+
+            for menu_item in items:
+                card = self._build_item_card(category, menu_item)
+                self._menu_layout.insertWidget(insert_index, card)
+                insert_index += 1
+
+    def _build_item_card(self, category, item):
+        available = bool(item.get("available", True))
+        fg = "#10b981" if available else "#ef4444"
+        bg = "#ecfdf5" if available else "#fef2f2"
+        border = "#e5e7eb" if available else "#fca5a5"
+
+        card = QFrame()
+        card.setStyleSheet(
+            f"QFrame {{ background: #ffffff; border: 1px solid {border}; border-radius: 12px; }}"
+        )
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(16)
+
+        left = QVBoxLayout()
+        left.setSpacing(4)
+
+        name = QLabel(item.get("name", "Unnamed item"))
+        name.setFont(QFont("Arial", 13, QFont.Bold))
+        name.setStyleSheet("color: #111827; background: transparent; border: none;")
+
+        desc = QLabel(item.get("description", ""))
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color: #6b7280; font-size: 12px; background: transparent; border: none;")
+
+        price = QLabel(f"EGP {float(item.get('price', 0)):.2f}")
+        price.setStyleSheet("color: #f0b100; font-size: 12px; font-weight: 700; background: transparent; border: none;")
+
+        left.addWidget(name)
+        if desc.text():
+            left.addWidget(desc)
+        left.addWidget(price)
+
+        badge = QLabel("  Available  " if available else "  Unavailable  ")
+        badge.setFixedHeight(26)
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setStyleSheet(
+            f"color: {fg}; background: {bg}; border: 1px solid {fg}55;"
+            " border-radius: 6px; font-size: 12px; font-weight: 700;"
+        )
+
+        btn = QPushButton("Mark Unavailable" if available else "Mark Available")
+        btn.setFixedHeight(38)
+        btn.setMinimumWidth(160)
+        btn.setStyleSheet("""
+            QPushButton { background: #f0b100; color: white; border: none;
+                border-radius: 8px; padding: 0 16px; font-size: 13px; font-weight: 700; }
+            QPushButton:hover { background: #d99f00; }
+        """)
+        btn.clicked.connect(
+            lambda _checked=False, c=category, n=item.get("name", ""), new_value=(not available):
+                self._toggle_item(c, n, new_value)
+        )
+
+        layout.addLayout(left, stretch=1)
+        layout.addWidget(badge, alignment=Qt.AlignVCenter)
+        layout.addWidget(btn, alignment=Qt.AlignVCenter)
+        return card
+
+    def _toggle_item(self, category, item_name, available):
+        if not item_name:
+            return
+
+        set_item_availability(
+            self.restaurant_id,
+            category,
+            item_name,
+            available,
+            self.user_data.get("email", ""),
+        )
+        QMessageBox.information(
+            self,
+            "Availability Updated",
+            f"{item_name} is now {'Available' if available else 'Unavailable'}."
+        )
+        self.refresh_menu()
+
+
 class RestaurantDashboard(QMainWindow):
     def __init__(self, user_data):
         super().__init__()
         self.user_data = user_data
         name = user_data.get("full_name", "Restaurant Owner")
+        self.owner_record = get_restaurant_owner_record(user_data.get("email", ""))
+        self.restaurant_id = self.owner_record["restaurant_id"] if self.owner_record else None
+        self.restaurant_name = (
+            self.owner_record.get("restaurant_name") if self.owner_record else "No linked restaurant"
+        )
         self._active_filter = "All"
         self._filter_btns = {}
 
@@ -727,6 +971,11 @@ class RestaurantDashboard(QMainWindow):
         email_lbl.setStyleSheet("color: #9ca3af; font-size: 11px; background: transparent;")
         email_lbl.setWordWrap(True)
         sb.addWidget(email_lbl)
+
+        restaurant_lbl = QLabel(f"🏪 {self.restaurant_name}")
+        restaurant_lbl.setStyleSheet("color: #f0b100; font-size: 11px; font-weight: 700; background: transparent;")
+        restaurant_lbl.setWordWrap(True)
+        sb.addWidget(restaurant_lbl)
         sb.addSpacing(24)
 
         div = QFrame()
@@ -783,8 +1032,21 @@ class RestaurantDashboard(QMainWindow):
         """)
         refresh_btn.clicked.connect(self.refresh_orders)
 
+        manage_menu_btn = QPushButton("🍽  Manage Menu Availability")
+        manage_menu_btn.setFixedHeight(36)
+        manage_menu_btn.setEnabled(self.owner_record is not None)
+        manage_menu_btn.setStyleSheet("""
+            QPushButton { background: #f0b100; color: white; border: none;
+                border-radius: 8px; padding: 0 16px; font-size: 13px; font-weight: 700; }
+            QPushButton:hover { background: #d99f00; }
+            QPushButton:disabled { background: #e5e7eb; color: #9ca3af; }
+        """)
+        manage_menu_btn.clicked.connect(self._open_menu_availability)
+
         tb.addWidget(page_title)
         tb.addStretch()
+        tb.addWidget(manage_menu_btn)
+        tb.addSpacing(8)
         tb.addWidget(refresh_btn)
         main_layout.addWidget(topbar)
 
@@ -845,6 +1107,25 @@ class RestaurantDashboard(QMainWindow):
         self.refresh_orders()
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _owned_orders(self):
+        if not self.restaurant_id:
+            return []
+        return [
+            order for order in load_orders()
+            if order.get("restaurant_id", "").strip() == self.restaurant_id
+        ]
+
+    def _open_menu_availability(self):
+        if not self.owner_record:
+            QMessageBox.warning(
+                self,
+                "No Linked Restaurant",
+                "No restaurant is linked to this account. Please contact the admin."
+            )
+            return
+        dialog = MenuAvailabilityDialog(self.owner_record, self.user_data, self)
+        dialog.exec_()
 
     def _stat_card(self, label, value, color):
         frame = QFrame()
@@ -911,7 +1192,19 @@ class RestaurantDashboard(QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
 
-        all_orders = load_orders()
+        all_orders = self._owned_orders()
+
+        if not self.restaurant_id:
+            for card in (self.pending_stat, self.accepted_stat, self.preparing_stat, self.ready_stat, self.total_stat):
+                self._update_stat(card, 0)
+            empty = QLabel("No restaurant is linked to this account. Please contact the admin.")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setStyleSheet(
+                "color: #ef4444; font-size: 15px; padding: 60px;"
+                " background: transparent;"
+            )
+            self._orders_layout.insertWidget(0, empty)
+            return
 
         pending   = sum(1 for o in all_orders if o["status"] == "Pending")
         accepted  = sum(1 for o in all_orders if o["status"] == "Accepted")
@@ -1109,6 +1402,15 @@ class RestaurantDashboard(QMainWindow):
         order = get_order_by_id(order_id)
         if order is None:
             QMessageBox.warning(self, "Order Not Found", "This order could not be found.")
+            self.refresh_orders()
+            return
+
+        if not self.restaurant_id or order.get("restaurant_id", "").strip() != self.restaurant_id:
+            QMessageBox.warning(
+                self,
+                "Unauthorized Order",
+                "This order does not belong to the restaurant linked to this account."
+            )
             self.refresh_orders()
             return
 

@@ -9,10 +9,10 @@ from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QPushButton, QFrame, QScrollArea,
     QHBoxLayout, QVBoxLayout, QStackedWidget, QLineEdit,
-    QTextEdit, QButtonGroup, QRadioButton, QSizePolicy,
+    QTextEdit, QButtonGroup, QRadioButton, QSizePolicy, QMessageBox,
 )
 
-from restaurant_data import get_menu_for_restaurant
+from restaurant_data import get_menu_for_restaurant, is_item_available
 
 # ── CSV schema (extends main.py's existing orders_data.csv) ──────────────────
 ORDERS_CSV = "orders_data.csv"
@@ -371,6 +371,24 @@ class CartOrderWidget(QWidget):
     def _cart_count(self)   -> int:   return sum(e["qty"] for e in self.cart.values())
     def _go_to(self, page: int):      self._stack.setCurrentIndex(page)
 
+    def _refresh_menu_data(self):
+        """Reload the menu so item availability overrides are always current."""
+        self.menu_data = get_menu_for_restaurant(self.restaurant["id"])
+
+    def _remove_unavailable_cart_items(self):
+        """Remove cart items that became unavailable after being added."""
+        removed = []
+        for key, entry in list(self.cart.items()):
+            still_available = is_item_available(
+                self.restaurant["id"],
+                entry["category"],
+                entry["name"],
+            )
+            if not still_available:
+                removed.append(entry["name"])
+                self.cart.pop(key, None)
+        return removed
+
     # ── PAGE 0 – Menu / Restaurant Details ───────────────────────────────────
     def _build_menu_page(self) -> QWidget:
         page = QWidget()
@@ -441,6 +459,7 @@ class CartOrderWidget(QWidget):
         return page
 
     def _render_menu_items(self):
+        self._refresh_menu_data()
         while self._menu_layout.count():
             item = self._menu_layout.takeAt(0)
             if item.widget():
@@ -459,6 +478,15 @@ class CartOrderWidget(QWidget):
         self._menu_layout.addStretch()
 
     def _on_add_item(self, category: str, name: str, price: float):
+        if not is_item_available(self.restaurant["id"], category, name):
+            QMessageBox.warning(
+                self,
+                "Item Unavailable",
+                f"{name} is currently unavailable and cannot be added to your cart."
+            )
+            self._refresh_all()
+            return
+
         key = f"{category}|{name}"
         if key in self.cart:
             self.cart[key]["qty"] += 1
@@ -573,6 +601,20 @@ class CartOrderWidget(QWidget):
         self._total_lbl.setText(f"EGP {sub + fee:.2f}")
 
     def _open_checkout(self):
+        if not self.cart:
+            return
+
+        removed = self._remove_unavailable_cart_items()
+        if removed:
+            self._refresh_all()
+            QMessageBox.warning(
+                self,
+                "Cart Updated",
+                "Some items are no longer available and were removed from your cart:\n- "
+                + "\n- ".join(removed)
+            )
+            return
+
         # Sync summary labels before showing checkout page
         sub = self._subtotal()
         fee = self._delivery_fee()
@@ -776,6 +818,18 @@ class CartOrderWidget(QWidget):
         self._card_exp.blockSignals(False)
 
     def _confirm_order(self):
+        removed = self._remove_unavailable_cart_items()
+        if removed:
+            self._refresh_all()
+            QMessageBox.warning(
+                self,
+                "Checkout Blocked",
+                "Some items are no longer available and were removed from your cart:\n- "
+                + "\n- ".join(removed)
+            )
+            self._go_to(self._PAGE_CART)
+            return
+
         street = self._street.text().strip()
         city   = self._city.text().strip()
 
@@ -1013,7 +1067,7 @@ class CartOrderWidget(QWidget):
     def load_restaurant(self, restaurant: dict):
         """Switch to a different restaurant (resets cart and all form state)."""
         self.restaurant = restaurant
-        self.menu_data  = get_menu_for_restaurant(restaurant["id"])
+        self._refresh_menu_data()
         self.cart.clear()
 
         # Reset checkout form fields so a new order starts clean

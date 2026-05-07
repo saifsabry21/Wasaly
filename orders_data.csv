@@ -1,7 +1,7 @@
 order_id,restaurant_id,restaurant_name,user_email,items,subtotal,delivery_fee,total,address,payment_method,status,timestamp,updated_at
 101,R1,Legacy Restaurant,N/A,Pizza Margherita,0,0,0,N/A,N/A,Accepted,N/A,N/A
 102,R1,Legacy Restaurant,N/A,Burger Combo,0,0,0,N/A,N/A,Accepted,N/A,N/A
-103,R2,Legacy Restaurant,N/A,Pasta Alfredo,0,0,0,N/A,N/A,Rejected,N/A,N/A
+103,R2,Legacy Restaurant,N/A,Pasta Alfredo,0,0,0,N/A,N/A,Ready for Pickup,N/A,2026-05-06T18:55:59
 WAS-EDE108E3,OSM15,El Tahrir,mariam@example.com,2x House Special (EGP 99.00),198.00,5.00,203.00,"agora, cairo",cash,Accepted,2026-04-18T12:10:24,2026-04-18T12:10:24
 WAS-F10355B6,OSM15,El Tahrir,mariam@example.com,1x House Special (EGP 99.00),99.00,5.00,104.00,"agora, cairo",card,Rejected,2026-04-18T13:26:32,2026-04-18T13:26:32
 WAS-75329842,OSM15,El Tahrir,mariam@example.com,1x House Special (EGP 99.00),99.00,5.00,104.00,"cairo, cairo",card,Rejected,2026-04-18T13:28:36,2026-04-18T13:28:36
@@ -13,5 +13,9 @@ WAS-3D4F3720,R16,The Grill Room,mariam@example.com,1x Grilled Ribeye (EGP 320.00
 WAS-CDCAD5E7,R16,The Grill Room,mariam@example.com,2x Grilled Ribeye (EGP 320.00); 1x Mushroom Soup (EGP 58.00); 1x Crème Brûlée (EGP 78.00),776.00,20.00,796.00,"AUC Avenue, Cairo",cash,Accepted,2026-04-18T23:09:40,2026-04-18T23:09:40
 WAS-8E4573F6,OSM25,Cilantro,mariam@example.com,1x House Special (EGP 99.00),99.00,10.00,109.00,"auc, a",cash,Accepted,2026-04-19T11:45:20,2026-04-19T11:45:20
 WAS-D1FBA7A6,OSM34,الشبراوي,anas@gmail.com,1x House Special (EGP 99.00),99.00,14.00,113.00,"kerez, cairo",cash,Ready for Pickup,2026-04-19T11:53:53,2026-05-06T18:39:20
-WAS-F445E729,OSM0,McDonalds,mariam@example.com,2x House Special (EGP 99.00),198.00,14.00,212.00,"Tagamo3, 2, Damanhur",cash,Accepted,2026-04-21T16:31:45,2026-04-21T16:31:45
-WAS-A4CF48B4,OSM60,Tabali Leven Square Mall,saif@gmail.com,2x House Special (EGP 99.00),198.00,10.00,208.00,"tagamo3, New Cairo",cash,Ready for Pickup,2026-05-06T18:42:40,2026-05-06T18:44:05
+WAS-F445E729,OSM0,McDonalds,mariam@example.com,2x House Special (EGP 99.00),198.00,14.00,212.00,"Tagamo3, 2, Damanhur",cash,Ready for Pickup,2026-04-21T16:31:45,2026-05-06T20:11:37
+WAS-A4CF48B4,OSM60,Tabali Leven Square Mall,saif@gmail.com,2x House Special (EGP 99.00),198.00,10.00,208.00,"tagamo3, New Cairo",cash,Preparing,2026-05-06T18:42:40,2026-05-06T20:12:03
+WAS-48F2388B,R19,Koshary El Tahrir,saif@gmail.com,2x House Special (EGP 99.00),180.00,6.00,186.00,"tagamo3, newcairo",cash,Pending,2026-05-07T16:18:42,2026-05-07T16:18:42
+WAS-1EBD331B,R18,Sushi Samba,saif@gmail.com,3x California Roll (EGP 135.00),405.00,30.00,435.00,"tagamo3, newcairo",cash,Pending,2026-05-07T16:19:12,2026-05-07T16:19:12
+WAS-4B4D4C08,R01,Koshary El Tahrir,saif@gmail.com,6x Large Koshary (EGP 55.00),330.00,5.00,335.00,"tagamo3, newcairo",cash,Rejected,2026-05-07T16:22:39,2026-05-07T16:26:00
+WAS-1583B473,R01,Koshary El Tahrir,saif@gmail.com,1x Large Koshary (EGP 55.00),55.00,5.00,60.00,"new cairo, cairo",cash,Ready for Pickup,2026-05-07T16:32:24,2026-05-07T16:32:44

@@ -1,3 +1,14 @@
+import csv
+import copy
+import os
+from datetime import datetime
+
+MENU_AVAILABILITY_CSV = "menu_availability.csv"
+MENU_AVAILABILITY_HEADERS = [
+    "restaurant_id", "category", "item_name", "available", "updated_by", "updated_at"
+]
+
+
 RESTAURANT_MENUS = {
     "R01": {
         "categories": {
@@ -1323,25 +1334,129 @@ RESTAURANT_MENUS = {
 }
 
 
-def get_menu_for_restaurant(restaurant_id):
-    return RESTAURANT_MENUS.get(
-        restaurant_id,
-        {
-            "categories": {
-                "Popular Items": [
-                    {
-                        "name": "House Special",
-                        "description": "A popular item from this restaurant.",
-                        "price": 99.0,
-                        "available": True,
-                    },
-                    {
-                        "name": "Chef Recommendation",
-                        "description": "Recommended item currently unavailable.",
-                        "price": 119.0,
-                        "available": False,
-                    },
-                ]
-            }
-        }
+def _availability_key(restaurant_id, category, item_name):
+    return (
+        str(restaurant_id).strip(),
+        str(category).strip().lower(),
+        str(item_name).strip().lower(),
     )
+
+
+def _default_menu():
+    return {
+        "categories": {
+            "Popular Items": [
+                {
+                    "name": "House Special",
+                    "description": "A popular item from this restaurant.",
+                    "price": 99.0,
+                    "available": True,
+                },
+                {
+                    "name": "Chef Recommendation",
+                    "description": "Recommended item currently unavailable.",
+                    "price": 119.0,
+                    "available": False,
+                },
+            ]
+        }
+    }
+
+
+def ensure_menu_availability_csv():
+    if not os.path.exists(MENU_AVAILABILITY_CSV):
+        with open(MENU_AVAILABILITY_CSV, "w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=MENU_AVAILABILITY_HEADERS)
+            writer.writeheader()
+
+
+def _parse_available(value):
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "yes", "available"}
+
+
+def load_availability_overrides():
+    ensure_menu_availability_csv()
+    overrides = {}
+
+    with open(MENU_AVAILABILITY_CSV, "r", newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            restaurant_id = row.get("restaurant_id", "").strip()
+            category = row.get("category", "").strip()
+            item_name = row.get("item_name", "").strip()
+            if not restaurant_id or not category or not item_name:
+                continue
+            overrides[_availability_key(restaurant_id, category, item_name)] = _parse_available(
+                row.get("available", "True")
+            )
+
+    return overrides
+
+
+def set_item_availability(restaurant_id, category, item_name, available, updated_by=""):
+    ensure_menu_availability_csv()
+    target_key = _availability_key(restaurant_id, category, item_name)
+    rows = []
+    updated = False
+
+    with open(MENU_AVAILABILITY_CSV, "r", newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            row_key = _availability_key(
+                row.get("restaurant_id", ""),
+                row.get("category", ""),
+                row.get("item_name", ""),
+            )
+            if row_key == target_key:
+                row = {
+                    "restaurant_id": str(restaurant_id).strip(),
+                    "category": str(category).strip(),
+                    "item_name": str(item_name).strip(),
+                    "available": "True" if available else "False",
+                    "updated_by": str(updated_by).strip(),
+                    "updated_at": datetime.now().isoformat(timespec="seconds"),
+                }
+                updated = True
+            rows.append(row)
+
+    if not updated:
+        rows.append({
+            "restaurant_id": str(restaurant_id).strip(),
+            "category": str(category).strip(),
+            "item_name": str(item_name).strip(),
+            "available": "True" if available else "False",
+            "updated_by": str(updated_by).strip(),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        })
+
+    with open(MENU_AVAILABILITY_CSV, "w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=MENU_AVAILABILITY_HEADERS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def is_item_available(restaurant_id, category, item_name):
+    menu = get_menu_for_restaurant(restaurant_id)
+    for cat_name, items in menu.get("categories", {}).items():
+        if cat_name.strip().lower() != str(category).strip().lower():
+            continue
+        for item in items:
+            if item.get("name", "").strip().lower() == str(item_name).strip().lower():
+                return bool(item.get("available", True))
+    return False
+
+
+def get_menu_for_restaurant(restaurant_id):
+    base_menu = RESTAURANT_MENUS.get(restaurant_id, _default_menu())
+    menu = copy.deepcopy(base_menu)
+    overrides = load_availability_overrides()
+
+    for category, items in menu.get("categories", {}).items():
+        for item in items:
+            key = _availability_key(restaurant_id, category, item.get("name", ""))
+            if key in overrides:
+                item["available"] = overrides[key]
+
+    return menu
