@@ -473,6 +473,8 @@ class NearbyRestaurantsWidget(QWidget):
         self.location_thread = None
         self.fetch_thread = None
         self.geocode_thread = None
+        self._current_restaurants = []
+        self._is_live = False
         self._build_ui()
 
     def _build_ui(self):
@@ -628,6 +630,103 @@ class NearbyRestaurantsWidget(QWidget):
         cl.addStretch()
         root.addWidget(controls)
 
+        # ── Restaurant name / keyword filter ─────────────────────────────────
+        filter_bar = QFrame()
+        filter_bar.setStyleSheet(
+            "QFrame { background: #f9fafb; border-bottom: 1px solid #e5e7eb; }"
+        )
+        filter_bar.setFixedHeight(58)
+        fl = QHBoxLayout(filter_bar)
+        fl.setContentsMargins(24, 10, 24, 10)
+        fl.setSpacing(10)
+
+        filter_icon = QLabel("🔍")
+        filter_icon.setStyleSheet("font-size: 16px; background: transparent;")
+
+        self.name_filter_input = QLineEdit()
+        self.name_filter_input.setPlaceholderText(
+            "Filter results by name or cuisine  (e.g. \"pizza\", \"Egyptian\", \"sushi\")…"
+        )
+        self.name_filter_input.setFixedHeight(38)
+        self.name_filter_input.setStyleSheet("""
+            QLineEdit {
+                border: 1.5px solid #d1d5db; border-radius: 8px;
+                padding: 6px 12px; font-size: 13px; background: white; color: #111827;
+            }
+            QLineEdit:focus { border: 2px solid #f0b100; }
+        """)
+        self.name_filter_input.textChanged.connect(self._apply_name_filter)
+
+        clear_btn = QPushButton("✕")
+        clear_btn.setFixedSize(32, 32)
+        clear_btn.setStyleSheet("""
+            QPushButton { background: #e5e7eb; color: #374151; border: none;
+                border-radius: 6px; font-size: 13px; font-weight: 700; }
+            QPushButton:hover { background: #d1d5db; }
+        """)
+        clear_btn.clicked.connect(lambda: self.name_filter_input.clear())
+
+        fl.addWidget(filter_icon)
+        fl.addWidget(self.name_filter_input, stretch=1)
+        fl.addWidget(clear_btn)
+        root.addWidget(filter_bar)
+
+        # ── Criteria filters (rating / delivery time / fee) ───────────────────
+        criteria_bar = QFrame()
+        criteria_bar.setStyleSheet(
+            "QFrame { background: #ffffff; border-bottom: 2px solid #e5e7eb; }"
+        )
+        criteria_bar.setFixedHeight(52)
+        cfl = QHBoxLayout(criteria_bar)
+        cfl.setContentsMargins(24, 8, 24, 8)
+        cfl.setSpacing(12)
+
+        cfl.addWidget(QLabel("  Filters:"))
+
+        rat_lbl = QLabel("Min Rating:")
+        rat_lbl.setStyleSheet("color: #374151; font-size: 12px; font-weight: 600;")
+        self.rating_filter = QComboBox()
+        self.rating_filter.addItems(["Any", "4.0+", "4.3+", "4.5+"])
+        self.rating_filter.setFixedWidth(80)
+        self.rating_filter.setStyleSheet(cs)
+        self.rating_filter.currentIndexChanged.connect(self._apply_criteria_filters)
+
+        time_lbl = QLabel("Max Delivery Time:")
+        time_lbl.setStyleSheet("color: #374151; font-size: 12px; font-weight: 600;")
+        self.time_filter = QComboBox()
+        self.time_filter.addItems(["Any", "≤20 min", "≤30 min", "≤45 min"])
+        self.time_filter.setFixedWidth(100)
+        self.time_filter.setStyleSheet(cs)
+        self.time_filter.currentIndexChanged.connect(self._apply_criteria_filters)
+
+        fee_lbl = QLabel("Max Fee:")
+        fee_lbl.setStyleSheet("color: #374151; font-size: 12px; font-weight: 600;")
+        self.fee_filter = QComboBox()
+        self.fee_filter.addItems(["Any", "≤10 EGP", "≤15 EGP", "≤20 EGP"])
+        self.fee_filter.setFixedWidth(100)
+        self.fee_filter.setStyleSheet(cs)
+        self.fee_filter.currentIndexChanged.connect(self._apply_criteria_filters)
+
+        self.reset_filters_btn = QPushButton("Reset Filters")
+        self.reset_filters_btn.setFixedHeight(32)
+        self.reset_filters_btn.setStyleSheet("""
+            QPushButton { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;
+                border-radius: 7px; padding: 0 12px; font-size: 12px; font-weight: 600; }
+            QPushButton:hover { background: #e5e7eb; }
+        """)
+        self.reset_filters_btn.clicked.connect(self._reset_criteria_filters)
+
+        cfl.addWidget(rat_lbl)
+        cfl.addWidget(self.rating_filter)
+        cfl.addWidget(time_lbl)
+        cfl.addWidget(self.time_filter)
+        cfl.addWidget(fee_lbl)
+        cfl.addWidget(self.fee_filter)
+        cfl.addSpacing(8)
+        cfl.addWidget(self.reset_filters_btn)
+        cfl.addStretch()
+        root.addWidget(criteria_bar)
+
         # Progress
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
@@ -677,6 +776,7 @@ class NearbyRestaurantsWidget(QWidget):
 
     # ── Location ──────────────────────────────
     def _detect_location(self):
+        self._reset_name_filter()
         self._set_loading(True, "Detecting your location via IP… (Note: IP detection is city-level — for best results, select your area manually)")
         self._clear_results()
         self.location_thread = LocationFetchThread()
@@ -689,6 +789,7 @@ class NearbyRestaurantsWidget(QWidget):
         if not query:
             self._show_error("Please type an address or area name to search.")
             return
+        self._reset_name_filter()
         self._set_loading(True, f"Looking up \"{query}\"…")
         self._clear_results()
         self.geocode_thread = GeocodeFetchThread(query)
@@ -715,6 +816,7 @@ class NearbyRestaurantsWidget(QWidget):
         if not coords:
             self._show_error("Could not resolve selected location.")
             return
+        self._reset_name_filter()
         self._set_loading(True, f"Loading restaurants near {selected}…")
         self._clear_results()
         self.location_thread = LocationFetchThread(manual_coords=coords, manual_name=selected)
@@ -763,8 +865,23 @@ class NearbyRestaurantsWidget(QWidget):
     def _refresh_results(self):
         if self.user_lat is None:
             return
-        # Re-fetch with new radius when radius changes
         self._fetch_restaurants()
+
+    def _apply_name_filter(self):
+        if self._current_restaurants and self.user_lat is not None:
+            self._render_results(self._current_restaurants, self._is_live)
+
+    def _apply_criteria_filters(self):
+        if self._current_restaurants and self.user_lat is not None:
+            self._render_results(self._current_restaurants, self._is_live)
+
+    def _reset_criteria_filters(self):
+        for combo in (self.rating_filter, self.time_filter, self.fee_filter):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(0)
+            combo.blockSignals(False)
+        if self._current_restaurants and self.user_lat is not None:
+            self._render_results(self._current_restaurants, self._is_live)
 
     def _render_results(self, restaurants, is_live):
         radius = float(self.radius_combo.currentText().split()[0])
@@ -779,27 +896,72 @@ class NearbyRestaurantsWidget(QWidget):
         elif sort_by == "delivery_time":
             restaurants = sorted(restaurants, key=lambda x: x["delivery_time"])
 
-        self._clear_results()
+        # Apply name / keyword filter
+        query = self.name_filter_input.text().strip().lower()
+        all_in_area = restaurants
+        if query:
+            restaurants = [
+                r for r in restaurants
+                if query in r["name"].lower()
+                or query in r.get("category", "").lower()
+                or query in r.get("address", "").lower()
+            ]
 
+        # Apply criteria filters (rating / delivery time / fee)
+        min_rating = {"Any": 0, "4.0+": 4.0, "4.3+": 4.3, "4.5+": 4.5}.get(
+            self.rating_filter.currentText(), 0
+        )
+        max_time = {"Any": 9999, "≤20 min": 20, "≤30 min": 30, "≤45 min": 45}.get(
+            self.time_filter.currentText(), 9999
+        )
+        max_fee = {"Any": 9999, "≤10 EGP": 10, "≤15 EGP": 15, "≤20 EGP": 20}.get(
+            self.fee_filter.currentText(), 9999
+        )
+        if min_rating or max_time < 9999 or max_fee < 9999:
+            restaurants = [
+                r for r in restaurants
+                if r["rating"] >= min_rating
+                and r["delivery_time"] <= max_time
+                and r["fee"] <= max_fee
+            ]
+
+        self._clear_results()
         source_tag = "🟢 Live from OpenStreetMap" if is_live else "📋 Offline data"
 
         if not restaurants:
-            lbl = QLabel(
-                f"😕  No restaurants found within {radius:.0f} km of {self.user_location_name}.\n"
-                f"Try increasing the radius."
-            )
+            if query and all_in_area:
+                lbl = QLabel(
+                    f"🔍  No restaurants match \"{query}\" in {self.user_location_name}.\n"
+                    f"Try a different keyword or clear the search filter."
+                )
+                self.status_label.setText(
+                    f"📍 {self.user_location_name}  ·  0 of {len(all_in_area)} match \"{query}\"  ·  {source_tag}"
+                )
+            else:
+                lbl = QLabel(
+                    f"😕  No restaurants found within {radius:.0f} km of {self.user_location_name}.\n"
+                    f"Try increasing the radius."
+                )
+                self.status_label.setText(
+                    f"📍 {self.user_location_name}  ·  No results within {radius:.0f} km  ·  {source_tag}"
+                )
             lbl.setAlignment(Qt.AlignCenter)
             lbl.setWordWrap(True)
             lbl.setStyleSheet("color: #6b7280; font-size: 14px; padding: 40px;")
             self.results_layout.insertWidget(0, lbl)
-            self.status_label.setText(
-                f"📍 {self.user_location_name}  ·  No results within {radius:.0f} km  ·  {source_tag}"
+            self.status_label.setStyleSheet(
+                "color: #6b7280; font-size: 13px; padding: 12px; background: #f9fafb;"
             )
         else:
             loc_note = "  ·  ⚠️ IP-based — may be off by a few km" if getattr(self, "_ip_based", False) else ""
-            self.status_label.setText(
-                f"📍 {self.user_location_name}  ·  {len(restaurants)} place(s) within {radius:.0f} km  ·  {source_tag}{loc_note}"
-            )
+            if query:
+                self.status_label.setText(
+                    f"📍 {self.user_location_name}  ·  {len(restaurants)} of {len(all_in_area)} match \"{query}\"  ·  {source_tag}{loc_note}"
+                )
+            else:
+                self.status_label.setText(
+                    f"📍 {self.user_location_name}  ·  {len(restaurants)} place(s) within {radius:.0f} km  ·  {source_tag}{loc_note}"
+                )
             self.status_label.setStyleSheet(
                 "color: #374151; font-size: 13px; padding: 12px; background: #f9fafb; font-weight: 600;"
             )
@@ -811,3 +973,13 @@ class NearbyRestaurantsWidget(QWidget):
             item = self.results_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+
+    def _reset_name_filter(self):
+        """Clear keyword + criteria filters without triggering a re-render."""
+        self.name_filter_input.blockSignals(True)
+        self.name_filter_input.clear()
+        self.name_filter_input.blockSignals(False)
+        for combo in (self.rating_filter, self.time_filter, self.fee_filter):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(0)
+            combo.blockSignals(False)
