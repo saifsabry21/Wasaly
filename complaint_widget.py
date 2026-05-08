@@ -90,10 +90,12 @@ class ComplaintCard(QFrame):
             nb_lay = QVBoxLayout(notes_box)
             nb_lay.setContentsMargins(12, 8, 12, 8)
             nb_lay.setSpacing(4)
-            nb_lay.addWidget(QLabel("Admin response:") )
-            nb_lay.children()[1].setStyleSheet(
+            admin_header = QLabel("Admin response:")
+            admin_header.setStyleSheet(
                 "color:#92400e; font-size:11px; font-weight:700; background:transparent;"
             )
+            nb_lay.addWidget(admin_header)             
+
             note_lbl = QLabel(complaint["admin_notes"])
             note_lbl.setWordWrap(True)
             note_lbl.setStyleSheet("color:#92400e; font-size:12px; background:transparent;")
