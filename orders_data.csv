@@ -19,5 +19,9 @@ WAS-48F2388B,R19,Koshary El Tahrir,saif@gmail.com,2x House Special (EGP 99.00),1
 WAS-1EBD331B,R18,Sushi Samba,saif@gmail.com,3x California Roll (EGP 135.00),405.00,30.00,435.00,"tagamo3, newcairo",cash,Pending,2026-05-07T16:19:12,2026-05-07T16:19:12
 WAS-4B4D4C08,R01,Koshary El Tahrir,saif@gmail.com,6x Large Koshary (EGP 55.00),330.00,5.00,335.00,"tagamo3, newcairo",cash,Rejected,2026-05-07T16:22:39,2026-05-07T16:26:00
 WAS-1583B473,R01,Koshary El Tahrir,saif@gmail.com,1x Large Koshary (EGP 55.00),55.00,5.00,60.00,"new cairo, cairo",cash,Ready for Pickup,2026-05-07T16:32:24,2026-05-07T16:32:44
-WAS-B5B04319,OSM64,Hardee's,saif@gmail.com,1x House Special (EGP 99.00),99.00,10.00,109.00,"sa, sa",cash,Preparing,2026-05-09T17:31:08,2026-05-09T17:32:36
+WAS-B5B04319,OSM64,Hardee's,saif@gmail.com,1x House Special (EGP 99.00),99.00,10.00,109.00,"sa, sa",cash,Ready for Pickup,2026-05-09T17:31:08,2026-05-09T21:49:07
 WAS-A6D3C67A,OSM19,Fuddruckers,saif@gmail.com,2x House Special (EGP 99.00),198.00,10.00,208.00,"sa, sa",cash,Pending,2026-05-09T17:43:38,2026-05-09T17:43:38
+WAS-73020106,OSM14,Hardees,mariam@example.com,1x House Special (EGP 99.00),99.00,53.00,152.00,"Egyt, egy",cash,Pending,2026-05-09T21:47:31,2026-05-09T21:47:31
+WAS-9CA03DCF,OSM18,Hardee's,mariam@example.com,1x House Special (EGP 99.00),99.00,24.00,123.00,"edcsa, cdsaacd",cash,Pending,2026-05-09T21:59:48,2026-05-09T21:59:48
+WAS-FF30451F,OSM64,Hardee's,mariam@example.com,1x House Special (EGP 99.00),99.00,10.00,109.00,"sa, as",cash,Rejected,2026-05-09T22:02:18,2026-05-09T22:02:46
+WAS-3B65476A,OSM64,Hardee's,mariam@example.com,1x Chef Recommendation (EGP 119.00),119.00,10.00,129.00,"Tahrir Square, 2, Cairo — Add Extra sauce",cash,Preparing,2026-05-09T22:18:49,2026-05-09T22:20:35

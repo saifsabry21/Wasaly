@@ -620,8 +620,6 @@ class RoleWindow(QMainWindow):
             cl.addWidget(lbl_soon)
             return card
 
-        cart_card = _placeholder_card("🛒", "My Cart & Checkout", "Sprint 2")
-
         orders_card = QFrame()
         orders_card.setStyleSheet(
             "QFrame { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; }"
@@ -694,7 +692,6 @@ class RoleWindow(QMainWindow):
         ic_layout.addWidget(ic_btn)
 
         cards_layout.addWidget(nearby_card)
-        cards_layout.addWidget(cart_card)
         cards_layout.addWidget(orders_card)
         cards_layout.addWidget(issue_card)
         cards_layout.addWidget(reviews_card)
